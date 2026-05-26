@@ -5,8 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 EIGHTBITDO_VENDOR_ID = 0x2DC8
+KNOWN_EIGHTBITDO_PRODUCT_IDS = (
+    0x2030,
+)
 KNOWN_EIGHTBITDO_NAMES = (
     "8BitDo",
+    "8BitDo Ultimate 3mode Xbox",
     "Ultimate Bluetooth Controller",
     "Ultimate 2.4G Controller",
     "Ultimate C Controller",
