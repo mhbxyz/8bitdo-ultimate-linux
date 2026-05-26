@@ -14,7 +14,7 @@ from .doctor import run_doctor
 from .evdev_reader import iter_events
 from .report import build_report
 from .sdl import validate_mapping_file
-from .udev import get_rule_status, install_bundled_rule, install_instructions
+from .udev import get_rule_status, install_bundled_rule, install_instructions, uninstall_rule
 
 app = typer.Typer(help="Inspect and validate 8BitDo Ultimate controllers on Linux.")
 sdl_app = typer.Typer(help="SDL mapping helpers.")
@@ -93,6 +93,20 @@ def _render_doctor(result: object) -> None:
                 console.print("    sudo ultim8do install-udev")
             else:
                 console.print(f"  {recommendation}")
+
+
+def _render_udev_status(status: object) -> None:
+    payload = status.to_dict()
+    bundled_state = "present" if payload["bundled_exists"] else "missing"
+    system_state = "installed" if payload["system_exists"] else "missing"
+    matches = payload["installed_matches_bundled"]
+    match_text = "unknown" if matches is None else ("yes" if matches else "no")
+    console.print("8BitDo udev rules")
+    console.print()
+    console.print(f"Bundled rule: {payload['bundled_path']} ({bundled_state})")
+    console.print(f"System rule: {payload['system_path']} ({system_state})")
+    console.print(f"Matches bundled: {match_text}")
+    console.print('Access model: TAG+="uaccess"')
 
 
 @app.command("doctor")
@@ -201,6 +215,24 @@ def install_udev_command() -> None:
     except PermissionError:
         console.print(install_instructions())
         raise typer.Exit(code=1)
+
+
+@app.command("uninstall-udev")
+def uninstall_udev_command() -> None:
+    try:
+        console.print(uninstall_rule())
+    except PermissionError:
+        console.print("Run with sudo: sudo ultim8do uninstall-udev")
+        raise typer.Exit(code=1)
+
+
+@app.command("check-udev")
+def check_udev_command(as_json: bool = typer.Option(False, "--json", help="Render udev status as JSON.")) -> None:
+    status = get_rule_status()
+    if as_json:
+        _print_json(status.to_dict())
+        return
+    _render_udev_status(status)
 
 
 @sdl_app.command("validate")

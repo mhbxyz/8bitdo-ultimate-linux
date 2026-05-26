@@ -1,8 +1,11 @@
+from pathlib import Path
+
 from typer.testing import CliRunner
 
 from ultim8do import cli
 from ultim8do.doctor import DoctorDependency, DoctorResult, DoctorSystemInfo
 from ultim8do.devices import ControllerInfo
+from ultim8do.udev import UdevRuleStatus
 
 runner = CliRunner()
 
@@ -72,3 +75,79 @@ def test_install_udev_prints_instructions_when_not_root(monkeypatch) -> None:
 
     assert result.exit_code == 1
     assert "run installer" in result.stdout
+
+
+def test_install_udev_success_prints_install_message(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "install_bundled_rule", lambda: "Installed /etc/udev/rules.d/99-8bitdo-ultimate.rules")
+
+    result = runner.invoke(cli.app, ["install-udev"])
+
+    assert result.exit_code == 0
+    assert "Installed /etc/udev/rules.d/99-8bitdo-ultimate.rules" in result.stdout
+
+
+def test_uninstall_udev_requires_sudo_when_not_root(monkeypatch) -> None:
+    def raise_permission_error() -> str:
+        raise PermissionError("not root")
+
+    monkeypatch.setattr(cli, "uninstall_rule", raise_permission_error)
+
+    result = runner.invoke(cli.app, ["uninstall-udev"])
+
+    assert result.exit_code == 1
+    assert "sudo ultim8do uninstall-udev" in result.stdout
+
+
+def test_uninstall_udev_success_prints_message(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "uninstall_rule", lambda: "Removed /etc/udev/rules.d/99-8bitdo-ultimate.rules")
+
+    result = runner.invoke(cli.app, ["uninstall-udev"])
+
+    assert result.exit_code == 0
+    assert "Removed /etc/udev/rules.d/99-8bitdo-ultimate.rules" in result.stdout
+
+
+def test_check_udev_json_contains_expected_fields(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "get_rule_status",
+        lambda: UdevRuleStatus(
+            bundled_path=Path("/repo/udev/99-8bitdo-ultimate.rules"),
+            system_path=Path("/etc/udev/rules.d/99-8bitdo-ultimate.rules"),
+            bundled_exists=True,
+            system_exists=False,
+            bundled_content="rule",
+            system_content=None,
+            installed_matches_bundled=None,
+        ),
+    )
+
+    result = runner.invoke(cli.app, ["check-udev", "--json"])
+
+    assert result.exit_code == 0
+    assert '"bundled_path"' in result.stdout
+    assert '"system_exists"' in result.stdout
+    assert '"installed_matches_bundled"' in result.stdout
+
+
+def test_check_udev_human_mentions_bundled_system_and_matches(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "get_rule_status",
+        lambda: UdevRuleStatus(
+            bundled_path=Path("/repo/udev/99-8bitdo-ultimate.rules"),
+            system_path=Path("/etc/udev/rules.d/99-8bitdo-ultimate.rules"),
+            bundled_exists=True,
+            system_exists=True,
+            bundled_content="rule",
+            system_content="rule",
+            installed_matches_bundled=True,
+        ),
+    )
+
+    result = runner.invoke(cli.app, ["check-udev"])
+
+    assert result.exit_code == 0
+    assert "Bundled rule:" in result.stdout
+    assert "System rule:" in result.stdout
+    assert "Matches bundled: yes" in result.stdout
