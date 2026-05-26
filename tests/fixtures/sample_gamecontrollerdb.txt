@@ -1,0 +1,2 @@
+# Sample SDL mapping database
+03000000c82d00000100000000000000,8BitDo Ultimate Controller,a:b0,b:b1,back:b4,platform:Linux,

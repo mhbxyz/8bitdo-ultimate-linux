@@ -1,0 +1,5 @@
+# 8BitDo controllers use vendor 2dc8. Product IDs vary by model and mode.
+# Extend ATTRS{idProduct} matches if you need model-specific permissions.
+
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2dc8", TAG+="uaccess", MODE="0660", GROUP="input"
+SUBSYSTEM=="input", ATTRS{idVendor}=="2dc8", TAG+="uaccess", MODE="0660", GROUP="input"
