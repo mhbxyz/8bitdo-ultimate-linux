@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 from ultim8do import cli
 from ultim8do.doctor import DoctorDependency, DoctorResult, DoctorSystemInfo
 from ultim8do.devices import ControllerInfo
+from ultim8do.input_test import InteractiveTestResult, ObservedInputState
 from ultim8do.udev import UdevRuleStatus
 
 runner = CliRunner()
@@ -151,3 +152,56 @@ def test_check_udev_human_mentions_bundled_system_and_matches(monkeypatch) -> No
     assert "Bundled rule:" in result.stdout
     assert "System rule:" in result.stdout
     assert "Matches bundled: yes" in result.stdout
+
+
+def test_test_command_json_renders_result(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "resolve_test_device", lambda path: ("/dev/input/event99", None))
+    monkeypatch.setattr(
+        cli,
+        "run_interactive_test",
+        lambda path, controller, duration, render_live: InteractiveTestResult(
+            path=path,
+            device_name="Pad",
+            states=[ObservedInputState(label="A", kind="button", expected_codes=("BTN_SOUTH",), status="ok")],
+            unexpected_events=[],
+        ),
+    )
+
+    result = runner.invoke(cli.app, ["test", "--path", "/dev/input/event99", "--json", "--duration", "0.1"])
+
+    assert result.exit_code == 0
+    assert '"device_name"' in result.stdout
+    assert '"A"' in result.stdout
+
+
+def test_test_command_without_detected_controller_returns_error(monkeypatch) -> None:
+    def raise_runtime_error(path: str | None) -> tuple[str, None]:
+        raise RuntimeError("No readable 8BitDo evdev device found")
+
+    monkeypatch.setattr(cli, "resolve_test_device", raise_runtime_error)
+
+    result = runner.invoke(cli.app, ["test"])
+
+    assert result.exit_code == 1
+    assert "No readable 8BitDo evdev device found" in result.stdout
+
+
+def test_test_command_permission_denied_recommends_udev(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "resolve_test_device", lambda path: ("/dev/input/event99", None))
+
+    def raise_permission_error(path: str, controller, duration: float | None, render_live: bool):
+        raise PermissionError("not readable")
+
+    monkeypatch.setattr(cli, "run_interactive_test", raise_permission_error)
+
+    result = runner.invoke(cli.app, ["test", "--path", "/dev/input/event99", "--duration", "0.1"])
+
+    assert result.exit_code == 1
+    assert "ultim8do check-udev" in result.stdout
+
+
+def test_test_command_json_requires_duration() -> None:
+    result = runner.invoke(cli.app, ["test", "--json"])
+
+    assert result.exit_code != 0
+    assert "--json requires --duration" in result.stdout

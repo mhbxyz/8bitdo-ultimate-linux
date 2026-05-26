@@ -6,6 +6,7 @@ Linux tooling for inspecting and validating 8BitDo Ultimate controllers.
 
 - Enumerate candidate 8BitDo input devices through `pyudev` and `evdev`
 - Read live `/dev/input/event*` traffic for a selected device
+- Run an interactive control test to validate button and axis mappings
 - Run a `doctor` command to check Python, permissions, udev rules, and SDL mappings
 - Generate human-readable or JSON reports for bug reports and reverse engineering notes
 - Ship Arch packaging metadata, udev rules, and an optional user service
@@ -40,8 +41,10 @@ uv sync --extra dev --extra hid
 ```bash
 uv run ultim8do doctor
 uv run ultim8do list --json
+uv run ultim8do test
 uv run ultim8do inspect /dev/input/event5
 uv run ultim8do monitor /dev/input/event5 --limit 20
+uv run ultim8do test --path /dev/input/event5 --json --duration 5
 uv run ultim8do report --json
 uv run ultim8do sdl validate
 uv run ultim8do udev path

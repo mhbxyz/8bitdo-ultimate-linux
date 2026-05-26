@@ -12,6 +12,7 @@ from rich.table import Table
 from .devices import get_device_by_path, list_detected_controllers
 from .doctor import run_doctor
 from .evdev_reader import iter_events
+from .input_test import resolve_test_device, run_interactive_test
 from .report import build_report
 from .sdl import validate_mapping_file
 from .udev import get_rule_status, install_bundled_rule, install_instructions, uninstall_rule
@@ -192,6 +193,31 @@ def monitor_command(
         raise typer.Exit(code=1)
     except KeyboardInterrupt:
         raise typer.Exit(code=130)
+
+
+@app.command("test")
+def test_command(
+    path: str | None = typer.Option(None, "--path", help="evdev device path to test."),
+    duration: float | None = typer.Option(None, "--duration", min=0.1, help="Stop after N seconds."),
+    as_json: bool = typer.Option(False, "--json", help="Render final result as JSON."),
+) -> None:
+    if as_json and duration is None:
+        console.print("[red]--json requires --duration to avoid a blocking interactive run[/red]")
+        raise typer.Exit(code=1)
+    try:
+        resolved_path, controller = resolve_test_device(path)
+        result = run_interactive_test(resolved_path, controller, duration=duration, render_live=not as_json)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    except PermissionError as exc:
+        console.print(f"[red]Permission denied[/red] while opening the test device: {exc}")
+        console.print("Run `ultim8do check-udev` and, if needed, `sudo ultim8do install-udev`.")
+        raise typer.Exit(code=1)
+    except KeyboardInterrupt:
+        raise typer.Exit(code=0)
+    if as_json:
+        _print_json(result.to_dict())
 
 
 @app.command("report")
