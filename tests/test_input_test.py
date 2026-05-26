@@ -23,7 +23,7 @@ def _absinfo(value: int, minimum: int, maximum: int) -> SimpleNamespace:
 def test_build_initial_states_detects_complete_xbox_like_mapping() -> None:
     device = FakeDevice(
         {
-            1: [304, 305, 307, 308, 310, 311, 316],
+            1: [304, 305, 307, 308, 310, 311, 315, 314, 317, 318, 316],
             3: [
                 (0, _absinfo(0, -32768, 32767)),
                 (1, _absinfo(0, -32768, 32767)),
@@ -41,8 +41,11 @@ def test_build_initial_states_detects_complete_xbox_like_mapping() -> None:
 
     assert states["A"].status == "present"
     assert states["LT"].status == "axis"
-    assert states["LT"].code == "ABS_Z"
     assert states["LX"].code == "ABS_X"
+    assert states["L3"].status == "present"
+    assert states["R3"].status == "present"
+    assert states["Start"].status == "present"
+    assert states["Select"].status == "present"
     assert states["DPad"].status == "hat"
     assert states["Home"].status == "present"
 
@@ -78,31 +81,62 @@ def test_update_states_from_button_event_marks_button_ok() -> None:
     device = FakeDevice({1: [304], 3: []})
     states = build_initial_states(device)
     unexpected: list[str] = []
+    recent: list[str] = []
     event = SimpleNamespace(type=1, code=304, value=1)
 
-    update_states_from_event(states, event, unexpected)
+    update_states_from_event(states, event, unexpected, recent)
 
     assert states["A"].status == "ok"
     assert states["A"].activated is True
+    assert recent == ["EV_KEY BTN_A value=1"]
 
 
-def test_update_states_from_axis_event_updates_value() -> None:
+def test_update_states_from_axis_event_marks_axis_as_moved() -> None:
     device = FakeDevice({1: [], 3: [(0, _absinfo(0, -32768, 32767))]})
     states = build_initial_states(device)
     unexpected: list[str] = []
-    event = SimpleNamespace(type=3, code=0, value=123)
+    recent: list[str] = []
+    event = SimpleNamespace(type=3, code=0, value=8192)
+
+    update_states_from_event(states, event, unexpected, recent)
+
+    assert states["LX"].value == 8192
+    assert states["LX"].moved is True
+    assert states["LX"].activated is True
+
+
+def test_update_states_from_trigger_event_marks_trigger_as_moved() -> None:
+    device = FakeDevice({1: [], 3: [(2, _absinfo(0, 0, 255))]})
+    states = build_initial_states(device)
+    unexpected: list[str] = []
+    event = SimpleNamespace(type=3, code=2, value=32)
 
     update_states_from_event(states, event, unexpected)
 
-    assert states["LX"].value == 123
+    assert states["LT"].moved is True
+    assert states["LT"].activated is True
+
+
+def test_update_states_from_hat_event_marks_dpad_as_moved() -> None:
+    device = FakeDevice({1: [], 3: [(16, _absinfo(0, -1, 1)), (17, _absinfo(0, -1, 1))]})
+    states = build_initial_states(device)
+    unexpected: list[str] = []
+    event = SimpleNamespace(type=3, code=16, value=1)
+
+    update_states_from_event(states, event, unexpected)
+
+    assert states["DPad"].moved is True
+    assert states["DPad"].activated is True
 
 
 def test_update_states_from_unexpected_event_records_possible_mismap() -> None:
     device = FakeDevice({1: [304], 3: []})
     states = build_initial_states(device)
     unexpected: list[str] = []
-    event = SimpleNamespace(type=1, code=314, value=1)
+    recent: list[str] = []
+    event = SimpleNamespace(type=1, code=999, value=1)
 
-    update_states_from_event(states, event, unexpected)
+    update_states_from_event(states, event, unexpected, recent)
 
-    assert unexpected == ["EV_KEY BTN_SELECT value=1"]
+    assert unexpected == ["EV_KEY 999 value=1"]
+    assert recent == ["EV_KEY 999 value=1"]

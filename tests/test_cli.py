@@ -159,11 +159,12 @@ def test_test_command_json_renders_result(monkeypatch) -> None:
     monkeypatch.setattr(
         cli,
         "run_interactive_test",
-        lambda path, controller, duration, render_live: InteractiveTestResult(
+        lambda path, controller, duration, render_live, raw, guided: InteractiveTestResult(
             path=path,
             device_name="Pad",
             states=[ObservedInputState(label="A", kind="button", expected_codes=("BTN_SOUTH",), status="ok")],
             unexpected_events=[],
+            mode_notes=["xpad note"],
         ),
     )
 
@@ -189,7 +190,7 @@ def test_test_command_without_detected_controller_returns_error(monkeypatch) -> 
 def test_test_command_permission_denied_recommends_udev(monkeypatch) -> None:
     monkeypatch.setattr(cli, "resolve_test_device", lambda path: ("/dev/input/event99", None))
 
-    def raise_permission_error(path: str, controller, duration: float | None, render_live: bool):
+    def raise_permission_error(path: str, controller, duration: float | None, render_live: bool, raw: bool, guided: bool):
         raise PermissionError("not readable")
 
     monkeypatch.setattr(cli, "run_interactive_test", raise_permission_error)
@@ -205,3 +206,33 @@ def test_test_command_json_requires_duration() -> None:
 
     assert result.exit_code != 0
     assert "--json requires --duration" in result.stdout
+
+
+def test_test_command_passes_raw_and_guided_flags(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "resolve_test_device", lambda path: ("/dev/input/event99", None))
+    captured: dict[str, object] = {}
+
+    def fake_run(path: str, controller, duration: float | None, render_live: bool, raw: bool, guided: bool) -> InteractiveTestResult:
+        captured.update(
+            {
+                "path": path,
+                "duration": duration,
+                "render_live": render_live,
+                "raw": raw,
+                "guided": guided,
+            }
+        )
+        return InteractiveTestResult(path=path, device_name="Pad", states=[])
+
+    monkeypatch.setattr(cli, "run_interactive_test", fake_run)
+
+    result = runner.invoke(cli.app, ["test", "--path", "/dev/input/event99", "--duration", "0.1", "--raw", "--guided"])
+
+    assert result.exit_code == 0
+    assert captured == {
+        "path": "/dev/input/event99",
+        "duration": 0.1,
+        "render_live": True,
+        "raw": True,
+        "guided": True,
+    }

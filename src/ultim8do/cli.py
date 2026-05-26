@@ -200,13 +200,22 @@ def test_command(
     path: str | None = typer.Option(None, "--path", help="evdev device path to test."),
     duration: float | None = typer.Option(None, "--duration", min=0.1, help="Stop after N seconds."),
     as_json: bool = typer.Option(False, "--json", help="Render final result as JSON."),
+    raw: bool = typer.Option(False, "--raw", help="Show recent mapped events alongside unexpected ones."),
+    guided: bool = typer.Option(False, "--guided", help="Prompt for one control at a time to diagnose mis-mappings."),
 ) -> None:
     if as_json and duration is None:
         console.print("[red]--json requires --duration to avoid a blocking interactive run[/red]")
         raise typer.Exit(code=1)
     try:
         resolved_path, controller = resolve_test_device(path)
-        result = run_interactive_test(resolved_path, controller, duration=duration, render_live=not as_json)
+        result = run_interactive_test(
+            resolved_path,
+            controller,
+            duration=duration,
+            render_live=not as_json,
+            raw=raw,
+            guided=guided,
+        )
     except RuntimeError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1)

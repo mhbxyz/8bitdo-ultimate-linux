@@ -99,6 +99,8 @@ ATTRS{serial}=="0000DA8814D072EB"
 
 This confirms that the `evdev` path is functional in the observed USB/XInput mode.
 
+This mode is handled by the kernel `xpad` driver and exposed as `Generic X-Box pad`. That means Linux is seeing the controller through an Xbox-compatible interface, not a vendor-specific 8BitDo interface. In practice, this often limits `evdev` visibility to the standard Xbox control set. Underside buttons, paddles, or gyro may be remapped in firmware or absent from `evdev` entirely in this mode.
+
 ### `jstest /dev/input/js0`
 
 The host exposes `/dev/input/js0`, so the legacy joystick node exists. The `jstest` binary was not installed on the capture machine, so event traffic for the legacy interface was not exercised during this pass.
@@ -133,5 +135,7 @@ The following combinations still need real hardware captures on this exact contr
 - USB in `DInput`, `Switch`, and `Android` modes if the hardware/firmware exposes them.
 - Dongle `2.4G` mode in each available controller mode.
 - Bluetooth mode in each available controller mode.
+
+In particular, if underside buttons are required as distinct Linux inputs, they should be tested again outside `USB/XInput/xpad` mode because the current capture does not show a matching `hidraw` node or dedicated `evdev` codes for those controls.
 
 Do not reuse the `0x2dc8:0x2030` identifiers for those rows unless the exact same identifiers are observed again. 8BitDo controllers frequently change product IDs, names, driver bindings, and interface exposure across transport and mode combinations.
