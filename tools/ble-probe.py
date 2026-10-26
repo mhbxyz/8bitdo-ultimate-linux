@@ -17,7 +17,7 @@ import hashlib
 import struct
 import sys
 
-from bleak import BleakClient
+from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 
 from ultim8do.ble import CHAR_UUID, RECORD_SIZE, scan
@@ -50,8 +50,12 @@ def build_read(offset: int, length: int, total: int) -> bytes:
 
 async def pick(address: str | None = None) -> BLEDevice | None:
     if address:
-        return BLEDevice(address, address, None)
-    print("scan BLE (8 s)…")
+        device = await BleakScanner.find_device_by_address(address, timeout=10.0)
+        if device is not None:
+            return device
+        print(f"{address} introuvable, scan générique…", file=sys.stderr)
+    else:
+        print("scan BLE (8 s)…")
     devices = await scan(8.0)
     for d in devices:
         print(f"  {d.address}  « {d.name} »")

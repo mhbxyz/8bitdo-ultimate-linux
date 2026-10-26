@@ -1,0 +1,26 @@
+{
+  "size": 1652,
+  "md5": "60632ce293f16965a2912239853ca5c5",
+  "slot_flags": [
+    "0x03ffffff",
+    "0xffffffff",
+    "0xffffffff",
+    "0xffffffff"
+  ],
+  "gamepad_mode": 65535,
+  "cur_slot": 65535,
+  "profile_names": {
+    "slot0": {
+      "utf16-le": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff",
+      "utf16-be": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff"
+    },
+    "slot1": {
+      "utf16-le": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff",
+      "utf16-be": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff"
+    },
+    "slot2": {
+      "utf16-le": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff",
+      "utf16-be": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff"
+    }
+  }
+}

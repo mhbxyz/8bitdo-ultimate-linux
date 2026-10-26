@@ -99,12 +99,10 @@ def build_request(
 
 async def scan(timeout: float = 8.0) -> list[BLEDevice]:
     found = await BleakScanner.discover(timeout=timeout)
-    return [
-        d
-        for d in found
-        if any((d.name or "").startswith(p) for p in NAME_PREFIXES)
-        or "8bitdo" in (d.name or "").lower()
-    ]
+    # On ne garde que les identités de configuration (« 81HB-X/D/W »). La manette
+    # annonce aussi une identité HID « 8BitDo Ultimate 3mode Xbox » qui n'expose
+    # pas la caractéristique de configuration.
+    return [d for d in found if (d.name or "").startswith(NAME_PREFIXES)]
 
 
 class BleConfig:
@@ -153,3 +151,93 @@ class BleConfig:
     async def version(self) -> bytes | None:
         """Requête courte `81 05 00 21 01` sans l'encapsulation HID."""
         return await self.request(bytes.fromhex("04 05 00 21 01"))
+
+
+class FrameReader:
+    """Réassemble les trames BLE, éventuellement fragmentées sur plusieurs notifications.
+
+    Le pad peut découper une réponse de 61 octets (16 d'en-tête + 45 de données) en
+    plusieurs notifications, et renvoyer parfois moins de 45 octets de données. On
+    accumule donc les notifications jusqu'à disposer de l'en-tête complet puis de
+    `16 + len` octets.
+    """
+
+    def __init__(self, queue: "asyncio.Queue[bytes]") -> None:
+        self.queue = queue
+        self.buffer = bytearray()
+
+    async def next_frame(self, timeout: float = 1.5) -> Frame | None:
+        while True:
+            if len(self.buffer) >= 16:
+                length = struct.unpack_from("<H", self.buffer, 4)[0]
+                if len(self.buffer) >= 16 + length:
+                    frame = Frame(bytes(self.buffer[: 16 + length]))
+                    del self.buffer[: 16 + length]
+                    return frame
+            try:
+                chunk = await asyncio.wait_for(self.queue.get(), timeout)
+            except asyncio.TimeoutError:
+                return None
+            self.buffer += chunk
+
+    def reset(self) -> None:
+        self.buffer.clear()
+
+
+async def read_record(client: "BleakClient", total: int = 532) -> bytes:
+    """Lit le record complet (gère les réponses courtes et fragmentées)."""
+    queue: asyncio.Queue[bytes] = asyncio.Queue()
+    await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
+    reader = FrameReader(queue)
+    record = bytearray(b"\xFF" * total)
+    cursor = 0
+    stalls = 0
+    while cursor < total and stalls < 4:
+        await client.write_gatt_char(
+            CHAR_UUID, build_request(CMD_READ, 0, b"\x00" * CHUNK, total, cursor), response=True
+        )
+        frame = await reader.next_frame(1.5)
+        if frame is None or frame.offset != cursor:
+            stalls += 1
+            reader.reset()
+            await asyncio.sleep(0.2)
+            continue
+        if not frame.data:
+            stalls += 1
+            cursor = ((cursor // CHUNK) + 1) * CHUNK
+            continue
+        record[cursor : cursor + len(frame.data)] = frame.data
+        cursor += len(frame.data)
+        stalls = 0
+    return bytes(record)
+
+
+async def write_record(client: "BleakClient", record: bytes, total: int | None = None) -> int:
+    """Écrit le record par tranches de 45 octets ; renvoie le nombre d'octets écrits."""
+    queue: asyncio.Queue[bytes] = asyncio.Queue()
+    await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
+    reader = FrameReader(queue)
+    total = len(record) if total is None else total
+    written = 0
+    for offset in range(0, len(record), CHUNK):
+        chunk = record[offset : offset + CHUNK]
+        await client.write_gatt_char(
+            CHAR_UUID, build_request(CMD_WRITE, 0, chunk, total, offset), response=True
+        )
+        frame = await reader.next_frame(2.0)
+        if frame is None or frame.command != CMD_WRITE:
+            raise RuntimeError(f"écriture refusée à l'offset {offset}")
+        written += len(chunk)
+    return written
+
+
+async def commit(client: "BleakClient", total: int = 532, sub: int = CMD_COMMIT_SUB) -> None:
+    """Envoie la commande de sauvegarde en flash (réponse sous ~3 s)."""
+    queue: asyncio.Queue[bytes] = asyncio.Queue()
+    await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
+    reader = FrameReader(queue)
+    await client.write_gatt_char(
+        CHAR_UUID, bytes([TRANSFER]) + struct.pack("<HHHHII", CMD_COMMIT, sub, 0, 0, total, 0),
+        response=True,
+    )
+    await reader.next_frame(5.0)
