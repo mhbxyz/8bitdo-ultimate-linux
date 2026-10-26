@@ -396,3 +396,33 @@ Pilotage de la VM depuis l'hôte : `vncdo -s 172.17.0.4::5900 capture|key|type`
 Étape suivante : faire écrire un réglage par l'app, rendre le contrôleur à
 l'hôte (`usb-passthrough.sh off`) et relire le record pour en déduire le format
 exact.
+
+## 14. Verdict : le logiciel officiel n'écrit pas dans ce record
+
+Protocole du test, mené avec l'app officielle dans la VM et la manette passée en
+PCI :
+
+1. relever les 532 octets du record via GIP ;
+2. dans *Ultimate Software X*, mapper **P1 → A** (le changement est visible dans
+   l'UI, l'app affiche bien « A » sur le sélecteur) ;
+3. fermer l'app, rendre la manette à l'hôte, relever à nouveau.
+
+Résultat : **aucune différence**, ni sur les flags, ni sur le mapping, ni sur le
+CRC. Le record est identique à l'octet près.
+
+Test précédent, même constat : cocher « Disable Deadzone » n'avait modifié que six
+octets (CRC + marqueurs `55 bb`), sans toucher aux sections.
+
+**Conclusion** : la configuration appliquée par le logiciel officiel ne transite
+pas par le record exposé en GIP (ni sans doute en BLE, qui sert le même buffer).
+Elle passe par un canal privé du pilote Xbox GIP, celui-là même que l'outil
+communautaire n'arrive pas à ouvrir (`\\.\XboxGIP_Admin`, accès refusé).
+
+Ce que ça clôt définitivement : sur ce modèle, ni le BLE ni le record GIP de
+532 octets ne portent la configuration XInput. Toutes les écritures conformes
+qu'on a pu faire sont donc stockées sans effet, et ce n'était pas un défaut de
+notre part.
+
+Piste restante, si un jour : capturer le trafic USB **dans Windows** (USBPcap)
+pendant que l'app officielle applique un réglage, pour voir les trames réelles.
+C'est la seule observation qui manque.
