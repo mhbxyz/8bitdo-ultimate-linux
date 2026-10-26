@@ -426,3 +426,24 @@ notre part.
 Piste restante, si un jour : capturer le trafic USB **dans Windows** (USBPcap)
 pendant que l'app officielle applique un réglage, pour voir les trames réelles.
 C'est la seule observation qui manque.
+
+## 15. USBPcap dans la VM : limite d'environnement
+
+Installation silencieuse de USBPcap 1.5.4.0 (`/S`, exit 0, `USBPcapCMD.exe` présent)
+puis `-I` (init des HWID non standard, nécessaire en USB 3.0). Après redémarrage
+de la VM, `USBPcapCMD -d \\.\USBPcapN` renvoie `Couldn't open device - 2` pour
+N = 1..4 : le pilote filtre ne s'attache pas au contrôleur xHCI tel qu'il est
+exposé par QEMU (vfio-pci sur `0000:c8:00.3`).
+
+Conclusion : capturer le canal privé du pilote Xbox GIP **dans cette VM** n'est
+pas possible en l'état. Il faudrait un Windows natif.
+
+## 16. Ce que la VM apporte malgré tout
+
+Le logiciel officiel **Ultimate Software X** fonctionne dans la VM, détecte la
+manette (`USB\VID_2DC8&PID_2030`, classe `XboxComposite`) et permet de régler
+profils, mapping, sticks, triggers, vibration et mise à jour du firmware.
+
+C'est donc, dès aujourd'hui, **le moyen de configurer cette manette sur une
+machine Linux** : une VM Windows avec passthrough PCI du contrôleur USB. Ce n'est
+pas un outil natif, mais c'est reproductible et documenté (sections 12 et 13).
