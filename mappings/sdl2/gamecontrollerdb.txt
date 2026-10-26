@@ -1,2 +1,0 @@
-# SDL Game Controller DB entries for 8BitDo controllers.
-# Add one mapping per line using the standard SDL format.
