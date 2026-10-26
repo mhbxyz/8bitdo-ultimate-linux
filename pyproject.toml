@@ -25,3 +25,8 @@ packages = ["src/ultim8do"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[dependency-groups]
+dev = [
+    "pillow>=13.0.0",
+]

@@ -133,8 +133,55 @@ Taille variable selon le modèle (1592 o pour l'Ultimate 2, 1652 o pour BT/2.4G 
 Chaque section porte son propre flag `0x20200911` : c'est ce qui permet de modifier
 un seul réglage sans réécrire tout le record.
 
-## 5. Ce qui reste à déterminer sur la 3-mode
+## 5. Résultats mesurés sur la 3-mode (2dc8:2030)
 
-- PID exact du mode configuration (le knock est-il seulement accepté ?).
-- Taille et offsets du record (probablement proches de l'Ultimate 2/2.4G).
-- Endpoint de sortie à utiliser pour le knock (`0x01` observé ici, 64 o).
+### Le knock Xbox 360 est ignoré
+
+La séquence `01 03 02 / 02 08 03 / 01 03 06 / rumble…` a été envoyée :
+
+| Cible | Effet |
+|---|---|
+| dock 2.4G (5-1.1) | déconnexion du bus, retour en `2030` après rebranchement |
+| pad filaire (5-1.2) | **aucun effet**, la manette reste sur le bus |
+
+Conclusion : ce pad ne parle pas le protocole Xbox 360, il parle **GIP**.
+
+### Le pad parle GIP (confirmé)
+
+`05 20 01 01 00` (= `GIP_CMD_POWER`, mode ON) fait démarrer le flux :
+
+```
+<- INPUT    opt=0x00 seq=12 len=32  (état manette, 32 o)
+<- STATUS   opt=0x20 seq=15 len=4  96 00 00 00
+```
+
+`04 20 02 00` (`GIP_CMD_IDENTIFY`) renvoie 58 octets. En revanche, `GIP_CMD_HID_REPORT`
+(`0x0b`) est **silencieux**, y compris en découpant un rapport de 64 octets selon les
+règles de chunking de `xone` (58 o max, drapeaux `ACK|CHUNK_START|CHUNK`). Les commandes
+testées (`0x04 0x05 0x09 0x0a 0x0b 0x0c 0x1e 0x30 0x40 0x50`) ne renvoient rien.
+
+### Le canal de configuration n'est pas en USB
+
+L'app Android de 8BitDo configure cette famille (« Three/Gamesir », BLE `81HB-X/D/W`)
+**exclusivement en BLE** — le câble USB ne sert qu'à l'alimentation. Même protocole
+`0x04 / cmd / sub / chunk / crc / total / offset`, mais sans encapsulation HID :
+
+```
+requête BLE : 04 | u16 cmd | u16 sub | u16 len | u16 crc | u32 total | u32 offset | data
+réponse BLE : 04 | 00 | u16 cmd_echo | u16 len | u16 crc | u32 total | u32 offset | data
+```
+
+Découverte GATT : service `00010203-0405-0607-0809-0A0B0C0D1910`,
+caractéristique `00010203-0405-0607-0809-0A0B0C0D2B11`, MTU négocié à 67.
+
+### Troisième voie : le mode D
+
+La manette a un sélecteur `X / D / S` au dos. En D, les autres Ultimate exposent un
+**canal HID de configuration** (`2dc8:3012`, rapport `0x81` sortant / `0x02` entrant).
+C'est la voie la plus simple si la 3-mode se comporte pareil — à mesurer.
+
+## 6. Ce qui reste à déterminer
+
+- Descripteurs et PID en mode D.
+- Taille et offsets du record (1652 o attendus ?), champs deadzone / mapping / profils.
+- Message GIP utilisé par *Ultimate Software X* (seulement si les voies D et BLE échouent).

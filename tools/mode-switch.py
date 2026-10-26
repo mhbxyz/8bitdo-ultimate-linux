@@ -6,9 +6,12 @@ la force à ré-énumérer en lui envoyant une init Xbox puis une rafale de rumb
 l'endpoint interrupt OUT. Elle revient alors avec un autre PID et un canal HID
 (report 0x81) sur lequel passent les trames de configuration.
 
-    uv run tools/mode-switch.py            # envoie la séquence et attend la ré-énumération
-    uv run tools/mode-switch.py --dry-run  # affiche seulement les paquets
-    uv run tools/mode-switch.py --pid 0x2030
+    uv run tools/mode-switch.py                # 1 tentative
+    uv run tools/mode-switch.py --repeat 3     # insiste, comme sur l'Ultimate 2.4G
+    uv run tools/mode-switch.py --dry-run
+
+Le pilote `xpad` est détaché le temps de la séquence puis remis en place si la
+manette est toujours là (sinon il faut rebrancher le câble).
 """
 
 from __future__ import annotations
@@ -39,8 +42,12 @@ INIT_SEQUENCE: list[bytes] = [
 DELAY = 0.015  # 15 ms entre paquets, comme le logiciel officiel
 
 
-def devices(vid: int = VID) -> list[usb.core.Device]:
-    return list(usb.core.find(find_all=True, idVendor=vid))
+def devices() -> list[usb.core.Device]:
+    return list(usb.core.find(find_all=True, idVendor=VID))
+
+
+def snapshot() -> list[tuple[int, int, int]]:
+    return [(d.idProduct, d.bus, d.address) for d in devices()]
 
 
 def describe(dev: usb.core.Device) -> str:
@@ -48,75 +55,101 @@ def describe(dev: usb.core.Device) -> str:
         product = usb.util.get_string(dev, dev.iProduct) if dev.iProduct else ""
     except (usb.core.USBError, ValueError):
         product = "?"
-    return (
-        f"{dev.idVendor:04x}:{dev.idProduct:04x} bus {dev.bus} addr {dev.address} "
-        f"« {product} »"
-    )
+    return f"{dev.idVendor:04x}:{dev.idProduct:04x} bus {dev.bus} addr {dev.address} « {product} »"
 
 
-def send_sequence(pid: int, interface: int, endpoint: int, delay: float) -> None:
+def send_knock(pid: int, interface: int, endpoint: int, delay: float, repeat: int) -> None:
     dev = usb.core.find(idVendor=VID, idProduct=pid)
     if dev is None:
         sys.exit(f"périphérique {VID:04x}:{pid:04x} introuvable")
 
     print(f"cible : {describe(dev)}")
-    if dev.is_kernel_driver_active(interface):
-        print(f"détachement du pilote noyau sur l'interface {interface}")
-        dev.detach_kernel_driver(interface)
+    detached = False
+    try:
+        if dev.is_kernel_driver_active(interface):
+            print(f"détachement de xpad (interface {interface})")
+            dev.detach_kernel_driver(interface)
+            detached = True
+    except (NotImplementedError, usb.core.USBError) as exc:
+        print(f"  (is_kernel_driver_active : {exc})")
 
     usb.util.claim_interface(dev, interface)
+    gone = False
     try:
-        for i, packet in enumerate(INIT_SEQUENCE, 1):
-            print(f"  [{i}/{len(INIT_SEQUENCE)}] {packet.hex(' ')}")
-            dev.write(endpoint, packet, timeout=1000)
-            time.sleep(delay)
-    except usb.core.USBError as exc:
-        # la manette peut se déconnecter en plein milieu : c'est le comportement attendu
-        print(f"  (transfert interrompu : {exc})")
+        for attempt in range(1, repeat + 1):
+            if repeat > 1:
+                print(f"-- tentative {attempt}/{repeat}")
+            for i, packet in enumerate(INIT_SEQUENCE, 1):
+                print(f"  [{i}/{len(INIT_SEQUENCE)}] {packet.hex(' ')}")
+                try:
+                    dev.write(endpoint, packet, timeout=1000)
+                except usb.core.USBError as exc:
+                    print(f"  transfert interrompu ({exc}) — la manette a probablement décroché")
+                    gone = True
+                    break
+                time.sleep(delay)
+            if gone:
+                break
+            time.sleep(0.4)
+            if usb.core.find(idVendor=VID, idProduct=pid) is None:
+                print("  la manette n'est plus sur le bus")
+                gone = True
+                break
     finally:
-        try:
-            usb.util.release_interface(dev, interface)
-        except usb.core.USBError:
-            pass
+        if not gone:
+            try:
+                usb.util.release_interface(dev, interface)
+            except usb.core.USBError:
+                pass
+            if detached:
+                try:
+                    usb.util.dispose_resources(dev)
+                    dev.attach_kernel_driver(interface)
+                    print("  xpad rattaché")
+                except usb.core.USBError as exc:
+                    print(f"  rattachement de xpad impossible ({exc}) — rebrancher le câble")
 
 
-def wait_reenumeration(previous: list[tuple[int, int]], timeout: float) -> list[usb.core.Device]:
+def wait_reenumeration(timeout: float) -> list[usb.core.Device]:
     deadline = time.monotonic() + timeout
-    seen = set(previous)
     while time.monotonic() < deadline:
-        current = devices()
-        new = [d for d in current if (d.idVendor, d.idProduct) not in seen]
-        if new:
-            return new
+        current = [d for d in devices() if (d.idProduct, d.bus, d.address) not in BEFORE]
+        if current:
+            return current
         time.sleep(0.2)
     return []
 
 
+BEFORE: list[tuple[int, int, int]] = []
+
+
 def main() -> int:
+    global BEFORE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pid", type=lambda s: int(s, 0), default=PID_3MODE_XBOX)
     parser.add_argument("--interface", type=int, default=0)
     parser.add_argument("--endpoint", type=lambda s: int(s, 0), default=0x01)
     parser.add_argument("--delay", type=float, default=DELAY)
+    parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    print("séquence de bascule :")
-    for packet in INIT_SEQUENCE:
-        print(f"  {packet.hex(' ')}")
     if args.dry_run:
+        print("séquence de bascule :")
+        for packet in INIT_SEQUENCE:
+            print(f"  {packet.hex(' ')}")
         return 0
 
-    before = [(d.idVendor, d.idProduct) for d in devices()]
-    send_sequence(args.pid, args.interface, args.endpoint, args.delay)
+    BEFORE = snapshot()
+    print("périphériques 2dc8 avant :", BEFORE)
+    send_knock(args.pid, args.interface, args.endpoint, args.delay, args.repeat)
 
     print("attente de la ré-énumération…")
-    found = wait_reenumeration(before, args.timeout)
+    found = wait_reenumeration(args.timeout)
     if not found:
         print(
-            "aucun nouveau périphérique 2dc8:* détecté.\n"
-            "Débranchez/rebranchez la manette pour revenir en mode Xbox.",
+            "aucun nouveau périphérique 2dc8:* détecté.",
             file=sys.stderr,
         )
         return 1
