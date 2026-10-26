@@ -9,11 +9,11 @@ Disposition, établie sur matériel (firmware 2.00, mode D) :
     0x003   1       identifiant du record : 0x03 en mode D, 0x02 en mode X/PC
     0x004   ...     structure de configuration (cf. BASE ci-dessous)
 
-La structure de configuration reprend celle de la famille Ultimate
-(Ultimate 2 / 2.4G / BT), mais **sans la section macros** : le FAQ officiel
-indique que la 3-mode ne gère ni turbo ni macro, ce qui retire 1176 octets
-(1652 -> 476). D'où 4 + 476 = 480, complété à 532 par 52 octets de sections
-supplémentaires (gyro / LED).
+La structure de configuration reprend celle de la famille Ultimate, mais
+**sans la section macros** : le FAQ officiel indique que la 3-mode ne gère ni
+turbo ni macro, ce qui retire 1176 octets. Elle fait donc 500 octets, suivis de
+28 octets de sections supplémentaires (gyro / LED) non décodées :
+4 + 500 + 28 = 532.
 
 Les offsets ci-dessous sont exprimés **dans la structure**, il faut ajouter
 `BASE` (= 4) pour les atteindre dans le record brut.
@@ -172,7 +172,11 @@ class Record:
             name_raw = record[
                 BASE + OFF_NAMES + 32 * i : BASE + OFF_NAMES + 32 * (i + 1)
             ]
-            name = name_raw.decode("utf-16-le", "replace").split("\x00")[0]
+            name = (
+                name_raw.decode("utf-16-le", "replace")
+                .split("\x00")[0]
+                .rstrip("\uffff")  # zone effacée (0xFF) => pas de terminateur nul
+            )
             rumble_flag, rumble_l, rumble_r = struct.unpack_from(
                 "<Iff", record, BASE + OFF_RUMBLE + 12 * i
             )
@@ -220,9 +224,12 @@ class Record:
     def describe_mapping(self, slot: int) -> list[str]:
         out = []
         for button, code in zip(BUTTON_ORDER, self.slots[slot].mapping):
+            if code in (0, FLAG_ERASED):
+                continue
             name = CODE_NAMES.get(code, f"0x{code:x}")
-            if name not in ("none", button):
-                out.append(f"{button}→{name}" if name != "none" else f"{button}→(rien)")
+            if name == button:
+                continue
+            out.append(f"{button}→(rien)" if name == "none" else f"{button}→{name}")
         return out
 
     def describe_special(self, slot: int) -> list[str]:

@@ -42,7 +42,8 @@ réponse : 04 | 00      | u16 cmd | u16 len | u16 crc | u32 total | u32 offset |
 ## 3. Record : 532 octets
 
 **Pas 1652** : la 3-mode ne gère ni turbo ni macro (FAQ officiel), la section
-macros de 1176 octets de l'Ultimate 2 n'existe donc pas.
+macros de 1176 octets de l'Ultimate 2 n'existe donc pas. La structure fait
+500 octets, suivis de 28 octets de sections non décodées : 4 + 500 + 28 = 532.
 
 ```
 0x000  2   CRC-16/KERMIT de record[2:532], little-endian — recalculé par la manette
@@ -65,7 +66,7 @@ Offsets **dans la structure** (ajouter `0x004` pour le record brut) :
 | `0x0B0` | 24 | **deadzone triggers**, 3 × (flag, LT début/fin, RT début/fin ; 0..255) |
 | `0x0C8` | 24 | options, 3 × (flag, bits) — inversions, swap sticks/triggers, trigger rumble |
 | `0x0E0` | 276 | **mapping**, 3 × (flag + 22 × u32 codes de fonction) |
-| `0x1DC` | 56 | sections supplémentaires (gyro/LED), non décodées |
+| `0x1F4` | 28 | sections supplémentaires (gyro/LED), non décodées |
 
 ### Codes de fonction (mapping)
 
