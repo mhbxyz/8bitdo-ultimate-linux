@@ -356,3 +356,43 @@ sudo ./scripts/usb-passthrough.sh off    # rendu à l'hôte après usage
 
 Dans Windows : `Z:\8bitdo-gyro.exe`, clic droit → Exécuter en tant
 qu'administrateur.
+
+## 13. Ultimate Software X fonctionne dans la VM (passthrough PCI)
+
+Blocage du passthrough périphérique contourné en passant **le contrôleur PCI
+entier** (`0000:c8:00.3`, groupe IOMMU 29, seule la manette et un hub dessus) :
+
+```bash
+sudo ./scripts/usb-passthrough.sh on
+docker run -d --name win \
+  --device=/dev/kvm --device=/dev/net/tun --cap-add NET_ADMIN \
+  --device=/dev/vfio/vfio --device=/dev/vfio/29 --ulimit memlock=-1:-1 \
+  -p 8006:8006 -e VERSION=11 -e RAM_SIZE=4G -e CPU_CORES=4 \
+  -e ARGUMENTS="-device vfio-pci,host=0000:c8:00.3" \
+  -v ~/vms/windows:/storage -v ~/vms/shared:/shared \
+  --stop-timeout 120 dockurr/windows
+```
+
+Sans `--ulimit memlock=-1:-1`, QEMU échoue avec
+`vfio_container_dma_map(... ) = -12 (Cannot allocate memory)`.
+
+Résultat dans Windows :
+
+```
+USB\VID_2DC8&PID_2030   Xbox Gaming Device   (classe XboxComposite)
+```
+
+**Ultimate Software X** (récupérée depuis le Store, sideloadée avec ses
+dépendances) se lance, **détecte la manette** et affiche le bon modèle avec ses
+onglets Profile / Mapping / Sticks / Triggers / Vibration / Update.
+
+L'outil communautaire `8bitdo-gyro`, lui, reste bloqué : son accès à
+`\\.\XboxGIP_Admin` renvoie « accès refusé » même en High integrity, et son README
+reconnaît que cette voie GIP n'a jamais été validée sur matériel.
+
+Pilotage de la VM depuis l'hôte : `vncdo -s 172.17.0.4::5900 capture|key|type`
+(le serveur VNC de QEMU est joignable sur le réseau Docker).
+
+Étape suivante : faire écrire un réglage par l'app, rendre le contrôleur à
+l'hôte (`usb-passthrough.sh off`) et relire le record pour en déduire le format
+exact.
