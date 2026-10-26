@@ -9,6 +9,7 @@ description = "Protocole 8BitDo Ultimate 3-mode sous Linux (GIP + configuration)
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "bleak>=3.0.2",
     "evdev>=2.0.0",
     "pyusb>=1.2.1",
 ]
