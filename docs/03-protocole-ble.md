@@ -127,3 +127,55 @@ Hypothèses restantes :
    que le profil soit jugé valide et écrit.
 
 Trancher demande une capture du logiciel officiel sur Windows (VM + USBPcap).
+
+## 6. Ce que dit l'application Android officielle
+
+APK récupéré : `8BitDo Ultimate Software V2 Android V2.01`
+(`com.bbitdo.advanceandroidv2`), décompilé avec jadx ; `libadvancelib.so` n'est
+pas strippé, ce qui donne les symboles JNI et les constantes de protocole.
+
+### Notre manette dans l'app
+
+`utils/BLEUtils.java` reconnaît les noms `81HB-X`, `81HB-D`, `81HB-W` et les
+associe au service `…1910` / caractéristique `…2B11` — exactement le canal qu'on
+utilise. Côté modèle, ils sont rangés dans la famille **« Three »**, qui emprunte
+le chemin générique « Ultimate Wired » (20 boutons : A B X Y LB RB LT RT L3 R3
+Select Start Share/Logo + croix + P1/P2), et non la classe `Ultimate3Xbox`.
+
+### Constantes de protocole extraites de la bibliothèque native
+
+```
+read channel : offset 0, longueur 832 (0x340), cmd 2
+write channel: offset 0, longueur 832, cmd 1
+CRC          : ANSI_CRC_16_sh(record, 0x364)
+```
+
+Les fonctions `get3Xbox_Write*` donnent la disposition d'un record de **276
+octets par profil** (`0x114`), avec :
+
+| Section | Offset dans le bloc | Taille |
+|---|---|---|
+| nom | `+0x08` | 32 |
+| mapping | `+0x2C` | 4 o par entrée, pas de 8 |
+| sticks | `+0xDC` | 23 |
+| triggers | `+0xF3` | 8 |
+| vibration | `+0xFB` | 9 |
+| special | `+0x104` | 8 |
+
+Soit 3 × 276 + 4 = **832 octets** — à comparer aux **532 octets** que la manette
+sert réellement sur la caractéristique `2B11`, quelle que soit la valeur de
+`total` demandée (testé 532, 832, 868, 1652 : la lecture s'arrête toujours à
+`offset 532`, et au-delà la manette ne répond plus).
+
+### Point ouvert
+
+Deux dispositions coexistent donc : celle du logiciel (blocs de 276, mapping à
+pas de 8, 832 octets) et celle observée sur la manette (blocs de 176 terminés par
+`55 AA`, mapping à pas de 4, 532 octets). La seconde est un sous-ensemble cohérent
+(les 3 profils et les sections sticks/triggers/options y sont), mais écrire dedans
+ne survit pas à un cycle d'alimentation en mode PC.
+
+Prochaine étape logique : identifier le **PID interne** que la manette renvoie à
+l'app (commande de version) pour savoir sous quelle classe elle est réellement
+traitée, puis rejouer la trame exacte de `write3ECustomConfig`/`write3XboxCustomConfig`
+(avec son `total` de 832) sur la caractéristique `2B11`.
