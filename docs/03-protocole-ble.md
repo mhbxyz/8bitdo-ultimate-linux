@@ -36,7 +36,8 @@ réponse : 04 | 00      | u16 cmd | u16 len | u16 crc | u32 total | u32 offset |
 |---|---|---|
 | `0x0002` | 0 | lit `len` octets du record à `offset` (`total` = taille du record) |
 | `0x0001` | 0 | écrit `data` à `offset` |
-| `0x0006` | `0x15` ou `0x123` | commit en flash |
+| `0x0006` | **`0x67`** | commit en flash — validé sur matériel (voir §5) |
+| `0x0006` | `0x15` / `0x123` | sous-codes des autres générations |
 | `0x0007` | 0 | `report_state` (non nécessaire ici) |
 
 ## 3. Record : 532 octets
@@ -179,3 +180,23 @@ Prochaine étape logique : identifier le **PID interne** que la manette renvoie 
 l'app (commande de version) pour savoir sous quelle classe elle est réellement
 traitée, puis rejouer la trame exacte de `write3ECustomConfig`/`write3XboxCustomConfig`
 (avec son `total` de 832) sur la caractéristique `2B11`.
+
+
+## 7. Résolution du commit : `sub 0x67`
+
+Le sous-code de sauvegarde a été retrouvé dans `libadvancelib.so`, fonction
+`getSaveCustomConfigChannel`, qui construit la commande :
+
+```
+cmd = 0x0006, sub = 0x0067, offset = 0, longueur = 0
+```
+
+Testé sur la manette en mode PC : après `write` complet puis `commit sub 0x67`,
+le record **survit à un cycle d'alimentation** (CRC `0xc781` conservé, `a→b`
+toujours présent). Les sous-codes `0x15` et `0x123` ne faisaient que modifier la
+copie en RAM.
+
+Ce qui reste : le mapping écrit à `bloc+0x2C` est bien persisté mais **n'agit pas**
+sur les rapports XInput. Le chemin natif du modèle « Three » reste à identifier
+(celui de `Ultimate3Xbox` écrit des entrées de 8 octets à `+0x2C`, alors que le
+record de 532 octets observé les espace de 4 octets).

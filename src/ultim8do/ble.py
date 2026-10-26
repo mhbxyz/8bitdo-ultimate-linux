@@ -231,7 +231,12 @@ async def write_record(client: "BleakClient", record: bytes, total: int | None =
     return written
 
 
-COMMIT_SUBS = (0x15, 0x123)  # 0x15 : Bluetooth/2.4G ; 0x123 : mode PC (Windows)
+# Sous-codes de sauvegarde relevés dans les binaires officiels :
+#   0x67 : canal getSaveCustomConfigChannel (libadvancelib.so, app Android) — validé
+#          sur matériel : le record survit à un cycle d'alimentation en mode PC.
+#   0x15 : famille Bluetooth/2.4G (Ultimate BT, Ultimate 2.4G).
+#   0x123 : Ultimate 2 (mode PC, autre génération).
+COMMIT_SUBS = (0x67, 0x15)
 
 
 async def commit(
@@ -239,9 +244,9 @@ async def commit(
 ) -> list[int]:
     """Envoie la ou les commandes de sauvegarde en flash.
 
-    Le sous-code varie selon le mode : `0x15` pour le record Bluetooth/2.4G,
-    `0x123` pour le record PC. On envoie les deux par défaut (le premier no-op
-    est sans effet) ; `sub` force un code unique.
+    `0x67` est le code utilisé par l'app officielle (`getSaveCustomConfigChannel`)
+    et validé sur la 3-mode : le premier essai est donc le bon. Les autres codes
+    de la famille sont envoyés ensuite, sans effet s'ils ne s'appliquent pas.
     """
     queue: asyncio.Queue[bytes] = asyncio.Queue()
     await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
