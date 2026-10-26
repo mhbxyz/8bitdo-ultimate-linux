@@ -1,40 +1,39 @@
-"""Record de configuration 8BitDo Ultimate 3-mode (BLE, 532 octets).
+"""Configuration record of the 8BitDo Ultimate 3-mode (532 bytes).
 
-Disposition, établie sur matériel (firmware 2.00) :
+Layout, established on hardware (firmware 2.00):
 
-    0x000   2       CRC-16/KERMIT de record[2:532], little-endian
-                    -> recalculé par la manette à chaque commit
-    0x002   1       réservé (0xFF)
-    0x003   1       identifiant du record : 0x01 en mode PC/W,
-                    0x03 en mode D (Bluetooth), 0x02 en mode Xbox
-    0x004   176     bloc du profil 0
-    0x0B4   176     bloc du profil 1
-    0x164   176     bloc du profil 2
+    0x000   2       CRC-16/KERMIT over record[2:532], little-endian
+                    -> recomputed by the pad on every commit
+    0x002   1       reserved (0xFF)
+    0x003   1       record id: 0x01 in PC/W mode, 0x03 in D (Bluetooth) mode,
+                    0x02 in Xbox mode
+    0x004   176     profile 0 block
+    0x0B4   176     profile 1 block
+    0x164   176     profile 2 block
 
-    4 + 3 × 176 = 532
+    4 + 3 x 176 = 532
 
-Chaque bloc porte **un seul profil** : les sections y sont séquentielles (pas de
-tableau indexé par slot comme sur l'Ultimate 2) et le bloc se termine par le
-marqueur `55 AA`.
+Each block holds **one profile**: the sections are sequential (no per-slot array
+like on the Ultimate 2) and the block ends with the `55 AA` marker.
 
-Disposition d'un bloc (offsets relatifs au début du bloc) :
+Block layout (offsets relative to the block start):
 
-    0x00  4   flag du profil : 0x20200911 actif, 0xFFFFFFFF effacé
-    0x04  4   inconnu (0xFFFFFFFF sur un profil par défaut)
-    0x08  4   inconnu
-    0x0C 28   inconnu (nom / mode / crc_value ?)
-    0x28  4   flag de la section mapping
-    0x2C 80   20 × u32 codes de fonction
-    0x7C  4   flag de la section calibration
-    0x80 16   4 flottants (~25600 : butées/centres de sticks)
-    0x90  4   flag de la section deadzone sticks
-    0x94  4   LS début, LS fin, RS début, RS fin (0..128)
-    0x98  4   flag de la section deadzone triggers
-    0x9C  4   LT début, LT fin, RT début, RT fin (0..255)
-    0xA0  4   flag de la section options
-    0xA4  4   bits d'options
-    0xA8  6   remplissage (0xFF)
-    0xAE  2   marqueur 55 AA
+    0x00  4   profile flag: 0x20200911 enabled, 0xFFFFFFFF erased
+    0x04  4   unknown (0xFFFFFFFF on a default profile)
+    0x08  4   unknown
+    0x0C 28   unknown (name / mode / crc_value ?)
+    0x28  4   mapping section flag
+    0x2C 80   20 x u32 function codes
+    0x7C  4   calibration section flag
+    0x80 16   4 floats (~25600: stick centers and limits)
+    0x90  4   stick deadzone section flag
+    0x94  4   LS start, LS end, RS start, RS end (0..128)
+    0x98  4   trigger deadzone section flag
+    0x9C  4   LT start, LT end, RT start, RT end (0..255)
+    0xA0  4   options section flag
+    0xA4  4   option bits
+    0xA8  6   padding (0xFF)
+    0xAE  2   55 AA marker
 """
 
 from __future__ import annotations
@@ -52,11 +51,11 @@ FLAG_DISABLED = 0x20190000
 FLAG_ERASED = 0xFFFFFFFF
 BLOCK_MARKER = b"\x55\xaa"
 
-# -- offsets dans un bloc ---------------------------------------------------
+# -- offsets inside a block ------------------------------------------------
 OFF_FLAG = 0x00
 OFF_UNKNOWN_A = 0x04
 OFF_UNKNOWN_B = 0x08
-OFF_BODY = 0x0C  # 28 octets, contenu non identifié
+OFF_BODY = 0x0C  # 28 bytes, content unknown
 OFF_MAP_FLAG = 0x28
 OFF_MAP = 0x2C
 MAP_COUNT = 20
@@ -71,7 +70,7 @@ OFF_OPTIONS_FLAG = 0xA0
 OFF_OPTIONS = 0xA4
 OFF_MARKER = 0xAE
 
-# -- codes de fonction du mapping -------------------------------------------
+# -- mapping function codes ------------------------------------------------
 KEY_CODES: dict[str, int] = {
     "none": 0x0,
     "start": 0x1,
@@ -123,7 +122,7 @@ OPTION_BITS: dict[int, str] = {
 
 
 def crc16_kermit(data: bytes) -> int:
-    """Poly réfléchi 0x8408, init 0xFFFF, pas de xor final (variante 8BitDo)."""
+    """Reflected polynomial 0x8408, init 0xFFFF, no final xor (8BitDo variant)."""
     crc = 0xFFFF
     for byte in data:
         crc ^= byte
@@ -150,7 +149,7 @@ def blank_record(record_id: int = 0x01) -> bytearray:
 
 
 def finalise(record: bytearray) -> bytes:
-    """Met à jour le CRC d'en-tête et renvoie le record prêt à écrire."""
+    """Update the header CRC and return the record ready to be written."""
     struct.pack_into("<H", record, 0, record_crc(record))
     return bytes(record)
 
@@ -235,21 +234,21 @@ class Record:
     def describe_sticks(self, slot: int) -> str:
         p = self.profiles[slot]
         if p.sticks_flag != FLAG_ENABLED:
-            return "désactivé"
+            return "disabled"
         ls_start, ls_end, rs_start, rs_end = p.sticks
-        return f"LS {ls_start}→{ls_end}  RS {rs_start}→{rs_end}"
+        return f"LS {ls_start}->{ls_end}  RS {rs_start}->{rs_end}"
 
     def describe_triggers(self, slot: int) -> str:
         p = self.profiles[slot]
         if p.triggers_flag != FLAG_ENABLED:
-            return "désactivé"
+            return "disabled"
         lt_start, lt_end, rt_start, rt_end = p.triggers
-        return f"LT {lt_start}→{lt_end}  RT {rt_start}→{rt_end}"
+        return f"LT {lt_start}->{lt_end}  RT {rt_start}->{rt_end}"
 
     def describe_mapping(self, slot: int) -> list[str]:
         p = self.profiles[slot]
         if p.mapping_flag != FLAG_ENABLED:
-            return ["désactivé"]
+            return ["disabled"]
         out = []
         for button, code in zip(BUTTON_ORDER, p.mapping):
             if code in (0, FLAG_ERASED):
@@ -257,11 +256,11 @@ class Record:
             name = CODE_NAMES.get(code, f"0x{code:x}")
             if name == button:
                 continue
-            out.append(f"{button}→(rien)" if name == "none" else f"{button}→{name}")
+            out.append(f"{button}->(none)" if name == "none" else f"{button}->{name}")
         return out
 
     def describe_options(self, slot: int) -> list[str]:
         p = self.profiles[slot]
         if p.options_flag != FLAG_ENABLED:
-            return ["désactivé"]
+            return ["disabled"]
         return [name for bit, name in OPTION_BITS.items() if p.options & bit]

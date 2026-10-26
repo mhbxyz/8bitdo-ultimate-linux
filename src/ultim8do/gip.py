@@ -1,17 +1,16 @@
-"""Transport GIP (Xbox Game Input Protocol).
+"""GIP transport (Xbox Game Input Protocol).
 
-Le pad 8BitDo en mode Xbox expose l'interface XGIP (class ff/47/d0) : deux
-endpoints interrupt 64 octets. Chaque message GIP tient dans une trame de 64
-octets :
+In Xbox mode the 8BitDo pad exposes the XGIP interface (class ff/47/d0) with two
+64 byte interrupt endpoints. Every GIP message fits in one 64 byte frame:
 
-    0        commande     (u8)
+    0        command      (u8)
     1        options      (u8)  ACK / INTERNAL / CHUNK
     2        sequence     (u8)
-    3        length       (u8)  longueur du payload (hors header)
+    3        length       (u8)  payload length, header excluded
     4..      payload
 
-Les messages plus longs que 60 octets utiles sont découpés (CHUNK) ; on ne
-l'implémente pas ici, 8BitDo n'envoyant que de petites trames de config.
+Messages larger than 60 useful bytes are split (CHUNK). Not implemented here:
+8BitDo only sends small configuration frames.
 """
 
 from __future__ import annotations
@@ -69,7 +68,7 @@ class GipMessage:
 
     def encode(self) -> bytes:
         payload = self.payload
-        assert len(payload) <= MAX_PAYLOAD, "payload trop long pour une trame"
+        assert len(payload) <= MAX_PAYLOAD, "payload too long for a single frame"
         header = bytes([self.command, self.options, self.sequence, len(payload)])
         return (header + payload).ljust(MTU, b"\x00")
 

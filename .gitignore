@@ -1,4 +1,4 @@
-# artefacts propriétaires 8BitDo (voir vendor/README.md)
+# proprietary 8BitDo artifacts (see vendor/README.md)
 vendor/*
 !vendor/README.md
 

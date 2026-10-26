@@ -22,12 +22,12 @@ from ultim8do.record import (
 
 
 def test_crc16_kermit_known_vector():
-    # poly réfléchi 0x8408, init 0xFFFF, pas de xor final (variante 8BitDo)
+    # reflected polynomial 0x8408, init 0xFFFF, no final xor (8BitDo variant)
     assert crc16_kermit(b"123456789") == 0x6F91
 
 
 def test_crc_matches_hardware_value():
-    # valeur réellement renvoyée par la manette pour un record vierge en mode D
+    # value actually returned by the pad for a blank record in D mode
     record = bytearray(b"\xff" * RECORD_SIZE)
     record[3] = 0x03
     assert crc16_kermit(bytes(record[2:])) == 0x41A3
@@ -66,8 +66,8 @@ def test_parse_default_profile():
     parsed = Record.parse(bytes(finalise(record)))
     assert parsed.crc_ok
     assert parsed.profiles[0].enabled
-    assert parsed.describe_sticks(0) == "LS 0→128  RS 0→128"
-    assert parsed.describe_triggers(0) == "LT 0→255  RT 0→255"
+    assert parsed.describe_sticks(0) == "LS 0->128  RS 0->128"
+    assert parsed.describe_triggers(0) == "LT 0->255  RT 0->255"
     assert parsed.profiles[1].flag == FLAG_ERASED
 
 
@@ -92,7 +92,7 @@ def test_mapping_remap_detected():
     struct.pack_into("<I", record, base + OFF_MAP_FLAG, FLAG_ENABLED)
     struct.pack_into("<I", record, base + OFF_MAP, 0x1000)  # A -> B
     parsed = Record.parse(bytes(finalise(record)))
-    assert parsed.describe_mapping(0) == ["a→b"]
+    assert parsed.describe_mapping(0) == ["a->b"]
 
 
 def test_parse_rejects_short_buffer():

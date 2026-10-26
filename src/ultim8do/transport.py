@@ -1,4 +1,4 @@
-"""Accès bas niveau au pad 8BitDo via libusb + transport GIP."""
+"""Low level access to the 8BitDo pad over libusb, plus the GIP transport."""
 
 from __future__ import annotations
 
@@ -64,9 +64,11 @@ def _safe_str(dev, index: int) -> str:
 class GipTransport:
     """Une session GIP sur l'interface 0 (XGIP).
 
-    Le pilote noyau `xpad` occupe l'interface : on le détache explicitement
-    (libusb sait le faire sans privilèges dès lors qu'on a le droit d'ouvrir le
-    nœud `/dev/bus/usb/...`, cf. `udev/99-8bitdo-ultimate3mode.rules`).
+    The kernel `xpad` driver owns the interface, so we detach it explicitly.
+    libusb can do that without privileges as long as the process may open the
+    `/dev/bus/usb/...` node, see `udev/99-8bitdo-ultimate3mode.rules`.
+    Important: detaching resets the device, so it re-enumerates and any cached
+    handle becomes stale. Always look the device up again afterwards.
     """
 
     def __init__(
@@ -93,7 +95,7 @@ class GipTransport:
     def open(self) -> "GipTransport":
         dev = usb.core.find(idVendor=self.vid, idProduct=self.pid)
         if dev is None:
-            raise DeviceNotFound(f"aucun périphérique {self.vid:04x}:{self.pid:04x}")
+            raise DeviceNotFound(f"no device {self.vid:04x}:{self.pid:04x}")
         self.dev = dev
 
         if self.detach_kernel_driver:
@@ -182,7 +184,7 @@ class GipTransport:
         return seq
 
     def read_matching(self, seq: int, timeout_ms: int = 1000) -> GipMessage | None:
-        """Lit jusqu'à recevoir l'ACK de la séquence `seq` (ou autre message)."""
+        """Read until the ACK for sequence `seq` shows up, or another message does."""
         deadline = time.monotonic() + timeout_ms / 1000
         while time.monotonic() < deadline:
             msg = self.recv(max(1, int((deadline - time.monotonic()) * 1000)))
@@ -190,7 +192,7 @@ class GipTransport:
                 return None
             if msg.command == CMD_ACK and msg.payload[:1] == bytes([seq]):
                 return msg
-            # message non sollicité : on continue à écouter
+            # unsolicited message: keep listening
         return None
 
     def ack(self, msg: GipMessage) -> None:
@@ -205,9 +207,9 @@ class GipTransport:
         timeout_ms: int = 1000,
         stop_when=lambda m: True,
     ) -> list[GipMessage]:
-        """Envoie `command` puis collecte les réponses jusqu'au timeout.
+        """Send `command` and collect replies until the timeout.
 
-        `stop_when(msg)` permet de sortir dès qu'une réponse pertinente arrive.
+        `stop_when(msg)` allows an early exit as soon as a relevant reply lands.
         """
         seq = self.write(command, payload)
         received: list[GipMessage] = []

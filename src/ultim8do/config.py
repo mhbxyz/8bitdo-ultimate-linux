@@ -1,11 +1,14 @@
-"""Client du canal de configuration HID (rapport 0x81 / 0x02).
+"""Client for the HID configuration channel (report 0x81 out / 0x02 in).
 
-Utilisé une fois la manette basculée en mode configuration : elle expose alors un
-`/dev/hidrawN` sur lequel on écrit des rapports de 64 octets commençant par 0x81
-et lit des rapports commençant par 0x02.
+Used once the pad has been switched to configuration mode: it then exposes a
+`/dev/hidrawN` node on which we write 64 byte reports starting with 0x81 and read
+reports starting with 0x02.
 
-Trois framings existent dans la famille Ultimate ; on les encapsule derrière
-`FrameFormat` pour pouvoir les essayer l'un après l'autre sur un modèle inconnu.
+The Ultimate family uses three different framings; they are wrapped behind
+`FrameFormat` so they can be tried one after another on an unknown model.
+
+Kept for reference: on the Ultimate 3-mode this HID channel never appears (no
+hidraw node in Xbox mode), the real channels are BLE and GIP.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ FLAG_ENABLED = 0x20200911
 
 
 def crc16_modbus(data: bytes) -> int:
-    """CRC-16/MODBUS (poly réfléchi 0xA001, init 0xFFFF)."""
+    """CRC-16/MODBUS (reflected polynomial 0xA001, init 0xFFFF)."""
     crc = 0xFFFF
     for byte in data:
         crc ^= byte
@@ -44,7 +47,7 @@ def crc16_modbus(data: bytes) -> int:
 
 
 class FrameFormat(Enum):
-    """Variantes de framing rencontrées dans la famille Ultimate."""
+    """Framing variants found across the Ultimate family."""
 
     ULTIMATE2 = "ultimate2"  # 81 04 | cmd | sub | len | crc | total | offset | data
     LENGTH = "length"  # 81 n 04 | cmd | sub | len(u32) | total | offset | data
@@ -112,7 +115,7 @@ class HidConfig:
 
     # -- trames ---------------------------------------------------------
     def short_query(self, body: bytes) -> bytes | None:
-        """Requête courte fixe : `81 <n> <...>` (ex. 81 05 00 21 01)."""
+        """Fixed short query: `81 <n> <...>`, e.g. 81 05 00 21 01."""
         assert body[0] == REPORT_OUT
         return self.request_raw(body)
 
@@ -131,7 +134,7 @@ class HidConfig:
             header = struct.pack("<HHII", CMD_READ, 0, length, total) + struct.pack("<I", offset)
             payload = bytes([REPORT_OUT, 17 + 0, 0x04]) + header
         else:
-            raise ValueError("format non supporté pour une lecture")
+            raise ValueError("unsupported format for a read")
         raw = self.request_raw(payload, timeout)
         if raw is None:
             return None
@@ -148,7 +151,7 @@ class HidConfig:
         timeout: float | None = None,
     ) -> bytes | None:
         if len(data) > 45:
-            raise ValueError("écriture limitée à 45 octets")
+            raise ValueError("a write is limited to 45 bytes")
         crc = crc16_modbus(data) if (self.crc and fmt is FrameFormat.ULTIMATE2) else 0
         if fmt is FrameFormat.ULTIMATE2:
             header = struct.pack("<HHHHII", CMD_WRITE, sub, len(data), crc, total, offset)
@@ -162,12 +165,12 @@ class HidConfig:
         return self.write_block(0, b"", 0, fmt=fmt, sub=sub, timeout=5.0)
 
     def report_state(self, enable: bool, total: int = 0) -> bytes | None:
-        """Coupe (0) ou relance (1) les rapports d'entrée autour des écritures."""
+        """Stop (0) or resume (1) input reports around writes."""
         return self.write_block(0, b"", total, sub=1 if enable else 0)
 
 
 def parse_version(raw: bytes) -> tuple[float, int, int] | None:
-    """Extrait (version, beta, pid) d'une réponse `02 22` ou `02 04 … 21 01`."""
+    """Extract (version, beta, pid) from a `02 22` or `02 04 ... 21 01` reply."""
     if len(raw) < 24:
         return None
     if raw[0] != REPORT_IN:

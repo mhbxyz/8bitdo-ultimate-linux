@@ -1,13 +1,13 @@
-"""CLI de configuration de la 8BitDo Ultimate 3-mode sous Linux (BLE).
+"""Configuration CLI for the 8BitDo Ultimate 3-mode under Linux (BLE).
 
-    uv run ultim8do dump                                  # lit et affiche le record
+    uv run ultim8do dump                          # read and print the record
     uv run ultim8do set --slot 0 --stick-deadzone 12
     uv run ultim8do set --slot 0 --trigger-deadzone 8
     uv run ultim8do set --slot 0 --map a=b --map b=a
     uv run ultim8do set --slot 0 --option swap-sticks
-    uv run ultim8do set --slot 1 --enable                 # active le profil 1
+    uv run ultim8do set --slot 1 --enable         # enable profile 1
 
-`set` écrit, commite et relit pour vérifier.
+`set` writes, applies, commits and reads back to verify.
 """
 
 from __future__ import annotations
@@ -56,15 +56,15 @@ async def wait_for_device(timeout: float):
 async def connected(timeout: float) -> BleakClient:
     device = await wait_for_device(timeout)
     if device is None:
-        raise SystemExit("manette introuvable — appuyer sur le bouton Xbox pour la réveiller")
+        raise SystemExit("controller not found, press the Xbox button to wake it up")
     return BleakClient(device)
 
 
 def print_record(record: Record) -> None:
     print(f"record id {record.record_id}")
     print(
-        f"CRC en-tête 0x{record.header_crc:04x} (recalculé 0x{record.stored_crc:04x}"
-        f"{' — cohérent' if record.crc_ok else ' — différent'})"
+        f"header CRC 0x{record.header_crc:04x} (recomputed 0x{record.stored_crc:04x}"
+        f"{' - matches' if record.crc_ok else ' - differs'})"
     )
     for profile in record.profiles:
         state = "actif" if profile.enabled else f"inactif (0x{profile.flag:08x})"
@@ -76,7 +76,7 @@ def print_record(record: Record) -> None:
         print(f"   deadzone    : {record.describe_sticks(profile.index)}")
         print(f"   triggers    : {record.describe_triggers(profile.index)}")
         options = record.describe_options(profile.index)
-        print(f"   options     : {', '.join(options) if options else '—'}")
+        print(f"   options     : {', '.join(options) if options else '-'}")
         print(f"   remaps      : {', '.join(record.describe_mapping(profile.index))}")
 
 
@@ -112,7 +112,7 @@ async def cmd_dump(args) -> int:
         if args.save:
             with open(args.save, "wb") as fh:
                 fh.write(raw)
-            print(f"\nenregistré : {args.save}")
+            print(f"\nsaved: {args.save}")
     return 0
 
 
@@ -174,23 +174,23 @@ async def cmd_set(args) -> int:
         await ble.report_state(client, False)
         await ble.write_record(client, updated)
         subs = await ble.commit(client)
-        # la manette écrit la flash après avoir acquitté : on lui laisse le temps
+        # the pad writes flash after acknowledging, give it some time
         await asyncio.sleep(3.0)
         await ble.report_state(client, True)
-        print(f"commits envoyés : {[hex(s) for s in subs]}")
-        print("relecture immédiate :")
+        print(f"commits sent: {[hex(s) for s in subs]}")
+        print("immediate read back:")
         print_record(Record.parse(await ble.read_record(client)))
 
-    # Une reconnexion relit l'état réellement stocké (pas le cache de session).
+    # A reconnect reads what is really stored, not the session cache.
     await asyncio.sleep(2.0)
     async with BleakClient(device) as client:
         stored = Record.parse(await ble.read_record(client))
-        print("\nrelecture après reconnexion (état flash) :")
+        print("\nread back after reconnect (flash state):")
         print_record(stored)
         if args.save:
             with open(args.save, "wb") as fh:
                 fh.write(await ble.read_record(client))
-            print(f"enregistré : {args.save}")
+            print(f"saved: {args.save}")
     return 0
 
 
@@ -211,13 +211,13 @@ def main(argv: list[str] | None = None) -> int:
     sett.add_argument("--slot", type=int, default=0, choices=range(3))
     sett.add_argument("--stick-deadzone", type=int, help="0..128")
     sett.add_argument("--trigger-deadzone", type=int, help="0..255")
-    sett.add_argument("--map", action="append", help="ex. a=b")
+    sett.add_argument("--map", action="append", help="e.g. a=b")
     sett.add_argument(
         "--option",
         action="append",
         help=",".join(OPTION_NAMES),
     )
-    sett.add_argument("--disable", action="store_true", help="désactive le profil")
+    sett.add_argument("--disable", action="store_true", help="disable the profile")
     sett.add_argument("--save")
     sett.set_defaults(func=cmd_set)
 

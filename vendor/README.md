@@ -1,12 +1,12 @@
-# Éléments récupérés (binaires officiels 8BitDo)
+# Retrieved artifacts (official 8BitDo binaries)
 
-Ces archives/binaires **ne sont pas versionnés** (voir `.gitignore`) : ce sont des
-artefacts propriétaires, uniquement utiles pour le reverse engineering. Ce fichier
-documente comment les reproduire.
+These archives and binaries are **not versioned** (see `.gitignore`): they are
+proprietary artifacts, only useful for reverse engineering. This file documents
+how to fetch them again.
 
-## Ultimate Software V2 (application Win32, .NET + DLL native)
+## Ultimate Software V2 (Win32 app, .NET + native DLL)
 
-Page officielle : <https://app.8bitdo.com/Ultimate-Software-V2/>
+Official page: <https://app.8bitdo.com/Ultimate-Software-V2/>
 
 ```bash
 cd vendor
@@ -14,17 +14,17 @@ curl -LO https://support.8bitdo.com/bd-uploads/files/ultimate_soft/8BitDo_Ultima
 unzip 8BitDo_Ultimate_Software_V2_Windows_V1.37.zip
 ```
 
-Contenu intéressant :
+Interesting content:
 
-| Fichier | Rôle |
+| File | Role |
 |---|---|
-| `8BitDo Ultimate Software V2.exe` | app managée en *single-file bundle* (.NET), UI WPF |
-| `8BitDoAdvance.dll` | **moteur protocole natif x86** : 402 exports nommés (`Open_Hid`, `ReadHid`, `_ReadProfile`, `_WriteMapKey`, `_ANSI_CRC_16_Ultimate2_4`…) |
-| `RTKHIDKit.dll` | couche HID bas niveau |
-| `GenericHid.pdb`, `8BitDo Ultimate Software V2.pdb` | symboles (noms de méthodes managées) |
-| `dfu4.exe` | utilitaire de flash DFU |
+| `8BitDo Ultimate Software V2.exe` | managed app, .NET single-file bundle, WPF UI |
+| `8BitDoAdvance.dll` | **native x86 protocol engine**: 402 named exports (`Open_Hid`, `ReadHid`, `_ReadProfile`, `_WriteMapKey`, `_ANSI_CRC_16_Ultimate2_4`...) |
+| `RTKHIDKit.dll` | low level HID layer |
+| `GenericHid.pdb`, `8BitDo Ultimate Software V2.pdb` | symbols (managed method names) |
+| `dfu4.exe` | DFU flashing utility |
 
-Décompilation de la partie managée :
+Decompiling the managed part:
 
 ```bash
 dotnet tool install -g ilspycmd
@@ -32,21 +32,30 @@ ilspycmd --bundle-entry "8BitDo Ultimate Software V2.dll" -p -o /tmp/dec/v2 \
   "8BitDo Ultimate Software V2.exe"
 ```
 
-## Ultimate Software X (application UWP, pour ce contrôleur)
+## Ultimate Software X (UWP app, for this controller)
 
-Fiche Microsoft Store : <https://apps.microsoft.com/detail/9PMC9MN3ZZ85>
+Microsoft Store entry: <https://apps.microsoft.com/detail/9PMC9MN3ZZ85>
 
-Récupération des liens depuis l'API Store (cf. `tools/fetch-store-package.sh`) :
+Store links can be fetched through the rg-adguard endpoint (see the issue thread
+and `docs/02-protocole.md`):
 
 - `WuCategoryId` = `6e30d7e5-607f-47e8-b138-c5e6ad92df6a`
-- `..._1.5.0.0_..._up4wwata42ye0.appxbundle` (non chiffré, 62 Mo)
-- `..._1.5.0.70_..._up4wwata42ye0.eappxbundle` (chiffré, 72 Mo)
+- `..._1.5.0.0_..._up4wwata42ye0.appxbundle` (not encrypted, 62 MB)
+- `..._1.5.0.70_..._up4wwata42ye0.eappxbundle` (encrypted, 72 MB)
 
-L'`appxbundle` 1.5.0.0 se dézippe normalement :
+The 1.5.0.0 `appxbundle` unpacks normally:
 
 ```
 UWPAdvance_1.5.0.0_x64.appx
-  ├── UWPAdvance.dll           15 Mo  .NET Native (AOT, x64)
-  ├── D4XGaming.Devices.dll   100 Ko  composant WinRT (transport GIP)
-  └── D4XGaming.Devices.winmd          métadonnées : SendMessageA / SendMessageId / GetMessageB
+  |-- UWPAdvance.dll           15 MB  .NET Native (AOT, x64)
+  |-- D4XGaming.Devices.dll  100 KB  WinRT component (GIP transport)
+  `-- D4XGaming.Devices.winmd        metadata: SendMessageA / SendMessageId / GetMessageB
 ```
+
+## Other artifacts
+
+| File | Source |
+|---|---|
+| `8BitDo_Ultimate_Software_V2_Android_V2.01.apk` | `https://support.8bitdo.com/bd-uploads/files/ultimate_soft/8BitDo_Ultimate_Software_V2_Android_V2.01.apk` |
+| `USBPcapSetup.exe` | <https://github.com/desowin/usbpcap/releases> |
+| `8bitdo-gyro.exe` | <https://github.com/AriesAlex/8bitdo-gyro/releases> |

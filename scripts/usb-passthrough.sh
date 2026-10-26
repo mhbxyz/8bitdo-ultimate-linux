@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Bascule le contrôleur USB du bus 5 (celui de la manette) entre l'hôte et la VM.
+# Move the USB controller of bus 5 (the pad one) between the host and the VM.
 #
-#   sudo ./scripts/usb-passthrough.sh on    # donne le contrôleur à vfio (la VM peut le prendre)
-#   sudo ./scripts/usb-passthrough.sh off   # rend le contrôleur à l'hôte
+#   sudo ./scripts/usb-passthrough.sh on    # hand the controller to vfio (the VM can grab it)
+#   sudo ./scripts/usb-passthrough.sh off   # give the controller back to the host
 #
-# Le contrôleur 0000:c8:00.3 est seul dans son groupe IOMMU (groupe 29) : il porte
-# le bus USB 5, donc la manette, un hub VIA, un hub Terminus et le lecteur de
-# cartes microSD. Clavier, souris et Bluetooth sont sur un autre contrôleur
-# (0000:c6:00.3) et ne sont pas affectés.
+# Controller 0000:c8:00.3 is alone in its IOMMU group (group 29). It carries USB
+# bus 5, so the pad, a VIA hub, a Terminus hub and the microSD card reader.
+# Keyboard, mouse and Bluetooth sit on another controller (0000:c6:00.3) and are
+# not affected.
 #
-# Prérequis : un noyau dont les modules sont installés (7.3.0-3-cachyos ou
-# 6.18.55-2-cachyos-lts). Avec le noyau 7.2.9-2, /lib/modules est absent et
-# vfio-pci ne peut pas être chargé.
+# Requirement: a kernel whose modules are installed (7.3.0-3-cachyos or
+# 6.18.55-2-cachyos-lts). With kernel 7.2.9-2, /lib/modules is missing and
+# vfio-pci cannot be loaded.
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ GROUP=$(basename "$(readlink -f "/sys/bus/pci/devices/$PCI/iommu_group")")
 ACTION=${1:-}
 
 if [[ ${EUID} -ne 0 ]]; then
-    echo "erreur : à lancer avec sudo" >&2
+    echo "error: run this with sudo" >&2
     exit 1
 fi
 
@@ -32,10 +32,10 @@ on)
     fi
     echo vfio-pci > "/sys/bus/pci/devices/$PCI/driver_override"
     echo "$PCI" > /sys/bus/pci/drivers/vfio-pci/bind
-    echo "contrôleur $PCI confié à vfio-pci (groupe $GROUP)"
+    echo "controller $PCI handed to vfio-pci (group $GROUP)"
     ls -l "/dev/vfio/$GROUP"
     echo
-    echo "Relance la VM avec :"
+    echo "Restart the VM with:"
     echo "  --device=/dev/vfio/vfio --device=/dev/vfio/$GROUP \\"
     echo "  -e ARGUMENTS=\"-device vfio-pci,host=$PCI\""
     ;;
@@ -45,7 +45,7 @@ off)
         echo "$PCI" > /sys/bus/pci/drivers/vfio-pci/unbind
     fi
     echo "$PCI" > /sys/bus/pci/drivers/xhci_hcd/bind
-    echo "contrôleur $PCI rendu à l'hôte (xhci_hcd)"
+    echo "controller $PCI given back to the host (xhci_hcd)"
     ;;
 *)
     echo "usage: $0 on|off" >&2

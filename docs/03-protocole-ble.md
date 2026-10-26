@@ -1,83 +1,84 @@
-# Protocole de configuration — 8BitDo Ultimate 3-mode (BLE)
+# Configuration protocol, 8BitDo Ultimate 3-mode (BLE)
 
-Tout ce qui suit a été **mesuré sur matériel** (firmware 2.00, pad `2dc8:2030`,
-identité BLE `81HB-D` / `81HB-X`), pas seulement déduit des binaires.
+Everything below was **measured on hardware** (firmware 2.00, pad `2dc8:2030`, BLE
+identity `81HB-D` / `81HB-X`), not merely inferred from the binaries.
 
-## 1. Pourquoi BLE et pas USB
+## 1. Why BLE and not USB
 
-| Interface | Constat |
+| Interface | Finding |
 |---|---|
-| USB `2dc8:2030` (XGIP `ff/47/d0`) | la manette **parle GIP** : `05 20 01 01 00` déclenche le flux `INPUT`/`STATUS`, `04 20 02 00` répond à l'identify. Mais `GIP_CMD_HID_REPORT` (0x0b) reste muet, même avec le chunking de `xone`. Aucun canal de configuration. |
-| Knock « Xbox 360 » (`01 03 02` + rumble) | ignoré en filaire ; sur le dock il provoque une déconnexion sans bascule de mode |
-| BLE `81HB-*` | ✅ service `00010203-…-1910`, caractéristique `…-2B11`, notifications |
+| USB `2dc8:2030` (XGIP `ff/47/d0`) | the pad **speaks GIP**: `05 20 01 01 00` starts the `INPUT`/`STATUS` stream, `04 20 02 00` answers an identify. But `GIP_CMD_HID_REPORT` (0x0b) stays silent, even with `xone` chunking. No configuration channel. |
+| "Xbox 360" knock (`01 03 02` + rumble) | ignored when wired; on the dock it causes a disconnect without a mode change |
+| BLE `81HB-*` | yes: service `00010203-...-1910`, characteristic `...-2B11`, notifications |
 
-Le câble USB ne sert qu'à l'alimentation ; l'app Android officielle configure
-elle aussi **exclusivement en BLE**.
+The USB cable only provides power; the official Android app also configures
+**over BLE only**.
 
-La manette annonce deux identités BLE :
+The pad advertises two BLE identities:
 
-- `81HB-D` / `81HB-X` → celle qui porte le service de configuration ;
-- `8BitDo Ultimate 3mode Xbox` → identité HID « manette », **sans** la caractéristique de config.
+- `81HB-D` / `81HB-X`, the one carrying the configuration service;
+- `8BitDo Ultimate 3mode Xbox`, a "gamepad" HID identity, **without** the config
+  characteristic.
 
-## 2. Trame
+## 2. Frame
 
 ```
-requête : 04 | u16 cmd | u16 sub | u16 len | u16 crc | u32 total | u32 offset | data
-réponse : 04 | 00      | u16 cmd | u16 len | u16 crc | u32 total | u32 offset | data
+request  : 04 | u16 cmd | u16 sub | u16 len | u16 crc | u32 total | u32 offset | data
+response : 04 | 00      | u16 cmd | u16 len | u16 crc | u32 total | u32 offset | data
 ```
 
-- en-tête de requête : 17 octets ; en-tête de réponse : 16 octets (le `sub` disparaît,
-  un `00` s'insère après le type) ;
-- réponses parfois **fragmentées** sur plusieurs notifications, et parfois plus
-  courtes que 45 octets (fin de zone) → réassembler avant de parser ;
-- un périphérique connecté n'annonce plus : toujours `disconnect` avant un scan.
+- request header: 17 bytes, response header: 16 bytes (the `sub` field disappears,
+  a `00` byte is inserted after the type);
+- replies are sometimes **fragmented** over several notifications, and sometimes
+  shorter than 45 bytes (end of area), so reassemble before parsing;
+- a connected peripheral stops advertising: always `disconnect` before scanning.
 
-| cmd | sub | Effet |
+| cmd | sub | Effect |
 |---|---|---|
-| `0x0002` | 0 | lit `len` octets du record à `offset` (`total` = taille du record) |
-| `0x0001` | 0 | écrit `data` à `offset` |
-| `0x0006` | **`0x67`** | commit en flash — validé sur matériel (voir §5) |
-| `0x0006` | `0x15` / `0x123` | sous-codes des autres générations |
-| `0x0007` | 0 | `report_state` (non nécessaire ici) |
+| `0x0002` | 0 | read `len` bytes of the record at `offset` (`total` = record size) |
+| `0x0001` | 0 | write `data` at `offset` |
+| `0x0006` | **`0x67`** | commit to flash, verified on hardware (see section 7) |
+| `0x0006` | `0x15` / `0x123` | sub-codes used by other generations |
+| `0x0007` | 0 | `report_state` (not needed here) |
 
-## 3. Record : 532 octets
+## 3. Record: 532 bytes
 
-**Pas 1652** : la 3-mode ne gère ni turbo ni macro (FAQ officiel), la section
-macros de 1176 octets de l'Ultimate 2 n'existe donc pas. La structure fait
-500 octets, suivis de 28 octets de sections non décodées : 4 + 500 + 28 = 532.
+**Not 1652**: the 3-mode has neither turbo nor macro (official FAQ), so the 1176
+byte macro section of the Ultimate 2 does not exist. The structure is 500 bytes,
+followed by 28 bytes of undecoded sections: 4 + 500 + 28 = 532.
 
 ```
-0x000  2   CRC-16/KERMIT de record[2:532], little-endian — recalculé par la manette
-0x002  1   réservé (0xFF)
-0x003  1   identifiant du record : 0x03 en mode D, 0x02 en mode X/PC
-0x004  …   structure de configuration (famille Ultimate, sans macros)
+0x000  2   CRC-16/KERMIT over record[2:532], little-endian, recomputed by the pad
+0x002  1   reserved (0xFF)
+0x003  1   record id: 0x03 in D mode, 0x02 in X/PC mode
+0x004  ..  configuration structure (Ultimate family, without macros)
 ```
 
-Offsets **dans la structure** (ajouter `0x004` pour le record brut) :
+Offsets **inside the structure** (add `0x004` for the raw record):
 
-| Offset | Taille | Champ |
+| Offset | Size | Field |
 |---|---|---|
-| `0x000` | 12 | flags des 3 profils : `0x20200911` actif, `0x20190000` désactivé, `0xffffffff` effacé |
-| `0x00C` | 4 | `crc_value` (non validé par le firmware) |
-| `0x010` | 2 | `gamepad_mode` (1 en mode D, 3 en X d'après la famille) |
-| `0x012` | 2 | `cur_slot` (profil actif, 0..2) |
-| `0x014` | 96 | noms, 3 × 32 o UTF-16LE |
-| `0x074` | 36 | rumble, 3 × (flag u32, float gauche, float droite) |
-| `0x098` | 24 | **deadzone sticks**, 3 × (flag, LS début/fin, RS début/fin ; 0..128) |
-| `0x0B0` | 24 | **deadzone triggers**, 3 × (flag, LT début/fin, RT début/fin ; 0..255) |
-| `0x0C8` | 24 | options, 3 × (flag, bits) — inversions, swap sticks/triggers, trigger rumble |
-| `0x0E0` | 276 | **mapping**, 3 × (flag + 22 × u32 codes de fonction) |
-| `0x1F4` | 28 | sections supplémentaires (gyro/LED), non décodées |
+| `0x000` | 12 | flags of the 3 profiles: `0x20200911` enabled, `0x20190000` disabled, `0xffffffff` erased |
+| `0x00C` | 4 | `crc_value` (not checked by the firmware) |
+| `0x010` | 2 | `gamepad_mode` (1 in D mode, 3 in X mode per the family) |
+| `0x012` | 2 | `cur_slot` (active profile, 0..2) |
+| `0x014` | 96 | names, 3 x 32 bytes UTF-16LE |
+| `0x074` | 36 | rumble, 3 x (flag u32, left float, right float) |
+| `0x098` | 24 | **stick deadzone**, 3 x (flag, LS start/end, RS start/end, 0..128) |
+| `0x0B0` | 24 | **trigger deadzone**, 3 x (flag, LT start/end, RT start/end, 0..255) |
+| `0x0C8` | 24 | options, 3 x (flag, bits): inversions, swap sticks/triggers, trigger rumble |
+| `0x0E0` | 276 | **mapping**, 3 x (flag + 22 x u32 function codes) |
+| `0x1F4` | 28 | additional sections (gyro/LED), undecoded |
 
-### Codes de fonction (mapping)
+### Function codes (mapping)
 
-Ordre des boutons :
+Button order:
 
 ```
 A B X Y LB RB LT RT L3 R3 Select Start Star Home Up Down Left Right P1 P2 P3 P4
 ```
 
-| Code | Fonction | Code | Fonction |
+| Code | Function | Code | Function |
 |---|---|---|---|
 | `0x1` | Start | `0x400` | LB |
 | `0x2` | L3 | `0x800` | RB |
@@ -85,263 +86,257 @@ A B X Y LB RB LT RT L3 R3 Select Start Star Home Up Down Left Right P1 P2 P3 P4
 | `0x8` | Select | `0x2000` | A |
 | `0x10` | X | `0x4000` | LT |
 | `0x20` | Y | `0x8000` | RT |
-| `0x40` | Droite | `0x10000` | Menu |
-| `0x80` | Gauche | `0x20000` | Home |
-| `0x100` | Bas | `0x2000000` | P1 |
-| `0x200` | Haut | `0x4000000` | P2 |
-| `0` | désactivé | `0xFFFFFFFF` | effacé |
+| `0x40` | Right | `0x10000` | Menu |
+| `0x80` | Left | `0x20000` | Home |
+| `0x100` | Down | `0x2000000` | P1 |
+| `0x200` | Up | `0x4000000` | P2 |
+| `0` | disabled | `0xFFFFFFFF` | erased |
 
-## 4. Vérifications faites
+## 4. Checks performed
 
-- écriture/lecture d'un motif `00 01 02 … 2c` à l'offset 0 : relu à l'identique ;
-- écriture d'un nom `TEST` à `0x018` : relu `54 00 45 00 53 00 54 00` ;
-- création du profil 0 (`flags = 0x20200911`, `mode = 1`, `cur_slot = 0`, nom) :
-  conservé après commit ;
-- `CRC` recalculé par la manette **identique** au nôtre (`0x5258`, puis `0x986d`
-  après ajout des deadzones) → disposition et algorithme confirmés ;
-- octet `record[3]` (id de record) réécrit par la manette si on tente de le modifier.
+- write then read a `00 01 02 ... 2c` pattern at offset 0: read back identically;
+- write a `TEST` name at `0x018`: read back `54 00 45 00 53 00 54 00`;
+- create profile 0 (`flags = 0x20200911`, `mode = 1`, `cur_slot = 0`, name): kept
+  after the commit;
+- CRC recomputed by the pad **identical** to ours (`0x5258`, then `0x986d` after
+  adding the deadzones), so the layout and the algorithm are confirmed;
+- byte `record[3]` (record id) is rewritten by the pad if you try to change it.
 
-## 5. Limite connue : le commit du record PC ne persiste pas
+## 5. Known limit: the PC record commit does not persist
 
-Mesures sur le record **PC/Windows** (`81HB-W`, `record id 1`) :
+Measurements on the **PC/Windows** record (`81HB-W`, `record id 1`):
 
-| Action | Résultat |
+| Action | Result |
 |---|---|
-| lecture | ✅ 532 octets cohérents, CRC recalculé identique |
-| écriture (tranches de 45 o) | ✅ acquittée, relue dans la session |
-| relecture après reconnexion BLE | ✅ la modification est toujours là |
-| relecture après **extinction/rallumage** | ❌ retour à l'état d'origine (`0xc323`) |
+| read | yes, 532 consistent bytes, recomputed CRC matches |
+| write (45 byte chunks) | acknowledged and read back within the session |
+| read back after a BLE reconnect | the change is still there |
+| read back after **power off/on** | back to the original state (`0xc323`) |
 
-Essais infructueux pour faire persister : `commit sub 0x15`, `commit sub 0x123`,
-les deux à la suite, `report_state 0/1` autour de l'écriture, attente de 3 s avant
-déconnexion, avec et sans le dock branché (liaison 2.4G active ou non).
+Attempts that did not help: `commit sub 0x15`, `commit sub 0x123`, both in a row,
+`report_state 0/1` around the write, a 3 s wait before disconnecting, with and
+without the dock plugged in (2.4G link active or not).
 
-À l'inverse, sur le record **D/Bluetooth** (`record id 3`), un `commit sub 0x15`
-avait bien survécu à un cycle d'alimentation — la voie d'écriture flash existe donc.
+Conversely, on the **D/Bluetooth** record (`record id 3`), a `commit sub 0x15` did
+survive a power cycle, so the flash write path does exist.
 
-Hypothèses restantes :
+Remaining hypotheses:
 
-1. le profil PC est stocké (ou validé) côté **dock/récepteur 2.4G**, pas dans la
-   manette — le logiciel officiel passerait par le canal de configuration du dock ;
-2. le commit exige un sous-code propre à ce mode, non déterminé ;
-3. un champ d'en-tête du bloc (les 28 octets à `bloc+0x0C`) doit être rempli pour
-   que le profil soit jugé valide et écrit.
+1. the PC profile is stored or validated on the **dock/2.4G receiver** side, not in
+   the pad, and the official software goes through the dock configuration channel;
+2. the commit needs a sub-code specific to this mode, not identified yet;
+3. a header field of the block (the 28 bytes at `block+0x0C`) must be filled in for
+   the profile to be considered valid and written.
 
-Trancher demande une capture du logiciel officiel sur Windows (VM + USBPcap).
+Settling this requires a capture of the official software on Windows (VM + USBPcap).
 
-## 6. Ce que dit l'application Android officielle
+## 6. What the official Android app says
 
-APK récupéré : `8BitDo Ultimate Software V2 Android V2.01`
-(`com.bbitdo.advanceandroidv2`), décompilé avec jadx ; `libadvancelib.so` n'est
-pas strippé, ce qui donne les symboles JNI et les constantes de protocole.
+APK retrieved: `8BitDo Ultimate Software V2 Android V2.01`
+(`com.bbitdo.advanceandroidv2`), decompiled with jadx; `libadvancelib.so` is not
+stripped, which gives the JNI symbols and the protocol constants.
 
-### Notre manette dans l'app
+### Our pad in the app
 
-`utils/BLEUtils.java` reconnaît les noms `81HB-X`, `81HB-D`, `81HB-W` et les
-associe au service `…1910` / caractéristique `…2B11` — exactement le canal qu'on
-utilise. Côté modèle, ils sont rangés dans la famille **« Three »**, qui emprunte
-le chemin générique « Ultimate Wired » (20 boutons : A B X Y LB RB LT RT L3 R3
-Select Start Share/Logo + croix + P1/P2), et non la classe `Ultimate3Xbox`.
+`utils/BLEUtils.java` recognises the names `81HB-X`, `81HB-D`, `81HB-W` and maps
+them to service `...1910` / characteristic `...2B11`, exactly the channel we use.
+On the model side they are filed under the **"Three"** family, which takes the
+generic "Ultimate Wired" path (20 buttons: A B X Y LB RB LT RT L3 R3 Select Start
+Share/Logo plus the d-pad and P1/P2), not the `Ultimate3Xbox` class.
 
-### Constantes de protocole extraites de la bibliothèque native
+### Protocol constants extracted from the native library
 
 ```
-read channel : offset 0, longueur 832 (0x340), cmd 2
-write channel: offset 0, longueur 832, cmd 1
+read channel : offset 0, length 832 (0x340), cmd 2
+write channel: offset 0, length 832, cmd 1
 CRC          : ANSI_CRC_16_sh(record, 0x364)
 ```
 
-Les fonctions `get3Xbox_Write*` donnent la disposition d'un record de **276
-octets par profil** (`0x114`), avec :
+The `get3Xbox_Write*` functions describe a record of **276 bytes per profile**
+(`0x114`), with:
 
-| Section | Offset dans le bloc | Taille |
+| Section | Offset in the block | Size |
 |---|---|---|
-| nom | `+0x08` | 32 |
-| mapping | `+0x2C` | 4 o par entrée, pas de 8 |
+| name | `+0x08` | 32 |
+| mapping | `+0x2C` | 4 bytes per entry, stride 8 |
 | sticks | `+0xDC` | 23 |
 | triggers | `+0xF3` | 8 |
 | vibration | `+0xFB` | 9 |
 | special | `+0x104` | 8 |
 
-Soit 3 × 276 + 4 = **832 octets** — à comparer aux **532 octets** que la manette
-sert réellement sur la caractéristique `2B11`, quelle que soit la valeur de
-`total` demandée (testé 532, 832, 868, 1652 : la lecture s'arrête toujours à
-`offset 532`, et au-delà la manette ne répond plus).
+That is 3 x 276 + 4 = **832 bytes**, to compare with the **532 bytes** the pad
+actually serves on characteristic `2B11`, whatever `total` is requested (tested
+532, 832, 868, 1652: the read always stops at `offset 532`, and beyond that the pad
+stops answering).
 
-### Point ouvert
+### Open point
 
-Deux dispositions coexistent donc : celle du logiciel (blocs de 276, mapping à
-pas de 8, 832 octets) et celle observée sur la manette (blocs de 176 terminés par
-`55 AA`, mapping à pas de 4, 532 octets). La seconde est un sous-ensemble cohérent
-(les 3 profils et les sections sticks/triggers/options y sont), mais écrire dedans
-ne survit pas à un cycle d'alimentation en mode PC.
+Two layouts coexist: the software one (blocks of 276, mapping with stride 8, 832
+bytes) and the one observed on the pad (blocks of 176 ending with `55 AA`, mapping
+with stride 4, 532 bytes). The second is a consistent subset (the 3 profiles and
+the sticks/triggers/options sections are there), but writing into it does not
+survive a power cycle in PC mode.
 
-Prochaine étape logique : identifier le **PID interne** que la manette renvoie à
-l'app (commande de version) pour savoir sous quelle classe elle est réellement
-traitée, puis rejouer la trame exacte de `write3ECustomConfig`/`write3XboxCustomConfig`
-(avec son `total` de 832) sur la caractéristique `2B11`.
+Logical next step: identify the **internal PID** the pad reports to the app
+(version command) to know which class it is really handled by, then replay the exact
+`write3ECustomConfig` / `write3XboxCustomConfig` frame (with its `total` of 832) on
+characteristic `2B11`.
 
+## 7. Solving the commit: `sub 0x67`
 
-## 7. Résolution du commit : `sub 0x67`
-
-Le sous-code de sauvegarde a été retrouvé dans `libadvancelib.so`, fonction
-`getSaveCustomConfigChannel`, qui construit la commande :
+The save sub-code was found in `libadvancelib.so`, function
+`getSaveCustomConfigChannel`, which builds the command:
 
 ```
-cmd = 0x0006, sub = 0x0067, offset = 0, longueur = 0
+cmd = 0x0006, sub = 0x0067, offset = 0, length = 0
 ```
 
-Testé sur la manette en mode PC : après `write` complet puis `commit sub 0x67`,
-le record **survit à un cycle d'alimentation** (CRC `0xc781` conservé, `a→b`
-toujours présent). Les sous-codes `0x15` et `0x123` ne faisaient que modifier la
-copie en RAM.
+Tested on the pad in PC mode: after a full `write` then `commit sub 0x67`, the
+record **survives a power cycle** (CRC `0xc781` kept, `a->b` still present). The
+`0x15` and `0x123` sub-codes only changed the RAM copy.
 
-Ce qui reste : le mapping écrit à `bloc+0x2C` est bien persisté mais **n'agit pas**
-sur les rapports XInput. Le chemin natif du modèle « Three » reste à identifier
-(celui de `Ultimate3Xbox` écrit des entrées de 8 octets à `+0x2C`, alors que le
-record de 532 octets observé les espace de 4 octets).
+What remains: the mapping written at `block+0x2C` is persisted but **does not act**
+on XInput reports. The native path of the "Three" model is still to be identified
+(the `Ultimate3Xbox` one writes 8 byte entries at `+0x2C`, while the observed 532
+byte record spaces them by 4 bytes).
 
-## 8. `cur_slot` et limite d'application en mode PC
+## 8. `cur_slot` and the application limit in PC mode
 
-`S_Ultimate3XboxAdvance_setCurslot` écrit dans **`record[3]`** : l'octet que
-j'avais pris pour un « identifiant de record » est en réalité le **profil actif**.
-Valeurs observées : `1` en mode PC/W, `2` en mode Xbox, `3` en mode D.
+`S_Ultimate3XboxAdvance_setCurslot` writes into **`record[3]`**: the byte I took
+for a "record id" is actually the **active profile**. Observed values: `1` in PC/W
+mode, `2` in Xbox mode, `3` in D mode.
 
-La manette **refuse** qu'on le modifie : écrit `0`, relu `1` après commit. Elle
-garde la main sur ce champ.
+The pad **refuses** to let it change: write `0`, read back `1` after the commit. It
+keeps control of that field.
 
-Test d'application, avec `deadzone sticks = 100/128` écrit successivement :
+Application test, with `stick deadzone = 100/128` written in turn:
 
-| Bloc écrit | Amplitude mesurée du stick gauche |
+| Block written | Measured left stick amplitude |
 |---|---|
-| bloc 0 | ±32768 (pleine course) |
-| bloc 1 (= `cur_slot`) | ±32768 (pleine course) |
+| block 0 | +/-32768 (full range) |
+| block 1 (= `cur_slot`) | +/-32768 (full range) |
 
-Conclusion : le record accessible sur la caractéristique `2B11` (532 octets,
-blocs de 176) **n'est pas celui que le firmware applique au chemin XInput/2.4G**.
-Les écritures y sont persistées (commit `0x67`) mais restent sans effet sur les
-rapports de manette.
+Conclusion: the record reachable on characteristic `2B11` (532 bytes, 176 byte
+blocks) **is not the one the firmware applies to the XInput/2.4G path**. Writes
+there are persisted (commit `0x67`) but have no effect on gamepad reports.
 
-Cohérent avec le §6 : le logiciel officiel manipule un record de **832 octets**
-(blocs de 276), que la manette ne sert pas sur ce canal dans les modes testés.
+Consistent with section 6: the official software manipulates an **832 byte**
+record (276 byte blocks) that the pad does not serve on this channel in the modes
+tested.
 
-Prochaine piste : trouver comment l'app atteint ce record de 832 octets — soit un
-canal/mode de configuration distinct (déclenché par une commande, comme le
-« knock » des autres modèles), soit une négociation préalable sur `2B11`.
+Next lead: find how the app reaches that 832 byte record, either a distinct
+configuration channel/mode (triggered by a command, like the "knock" of other
+models), or a prior negotiation on `2B11`.
 
-## 9. Conclusion sur l'application des réglages
+## 9. Conclusion on applying settings
 
-Test final, avec la séquence complète du logiciel officiel reproduite
-(lecture de l'en-tête de 116 octets, écriture du record entier, `commit 0x67`,
-cycle d'alimentation) et `deadzone sticks = 100/128` :
+Final test, with the complete official software sequence reproduced (116 byte
+header read, whole record written, `commit 0x67`, power cycle) and
+`stick deadzone = 100/128`:
 
-| Essai | Amplitude du stick gauche |
+| Attempt | Left stick amplitude |
 |---|---|
-| bloc 0, commit `0x15` | ±32768 |
-| bloc 1 (= `cur_slot`), commit `0x67` | ±32768 |
-| après lecture d'en-tête + commit `0x67` | ±32768 |
+| block 0, commit `0x15` | +/-32768 |
+| block 1 (= `cur_slot`), commit `0x67` | +/-32768 |
+| after header read + commit `0x67` | +/-32768 |
 
-Le firmware **n'applique pas** ce record au chemin XInput/2.4G : les écritures
-sont persistées en flash (vérifié après cycle d'alimentation) mais restent sans
-effet sur les rapports de manette.
+The firmware **does not apply** this record to the XInput/2.4G path: writes are
+persisted in flash (verified after a power cycle) but have no effect on gamepad
+reports.
 
-Bilan : le canal BLE `2B11` est un canal de configuration fonctionnel (lecture,
-écriture, sauvegarde), mais il ne porte pas la configuration que la manette
-utilise en mode XInput. Le logiciel officiel manipule un record de 832 octets que
-ce canal ne sert pas.
+Summary: the BLE `2B11` channel is a working configuration channel (read, write,
+save), but it does not carry the configuration the pad uses in XInput mode. The
+official software manipulates an 832 byte record that this channel does not serve.
 
-Le record a été restauré dans son état d'usine (CRC `0xc323`, deadzone pleine
-course, remaps par défaut) à l'issue des essais.
+The record was restored to its factory state (CRC `0xc323`, full deadzone, default
+remaps) at the end of the tests.
 
-## 10. Oracle par l'application iOS — et verdict
+## 10. iOS app as an oracle, and verdict
 
-L'app iOS officielle *Ultimate Software* (la V2 refuse de s'appairer sur ce
-modèle) se connecte en **mode Bluetooth** (`81HB-D`) et configure la manette.
-Elle a servi d'oracle : un seul réglage changé (deadzone stick gauche = 50), puis
-comparaison des relevés avec `tools/record-diff.py`.
+The official iOS app *Ultimate Software* (V2 refuses to pair with this model)
+connects in **Bluetooth mode** (`81HB-D`) and configures the pad. It served as an
+oracle: one single setting changed (left stick deadzone = 50), then the dumps were
+compared with `tools/record-diff.py`.
 
-### Ce que l'app écrit — notre disposition était la bonne
+### What the app writes, our layout was right
 
-| Octet modifié | Contenu |
+| Byte changed | Content |
 |---|---|
-| `0x000` | CRC d'en-tête (recalculé) |
-| `bloc+0x00` | flag de profil `0x20200911` |
-| `bloc+0x28` | flag de section mapping |
-| `bloc+0x2C..0x7B` | 20 codes de fonction, **4 octets chacun** |
-| `bloc+0x7C` | flag calibration, puis 4 flottants |
-| `bloc+0x90` / `+0x94` | deadzone : `00 42 00 80` → **LS 0→66** (l'app convertit 50 en 66) |
-| `bloc+0x98` / `+0x9C` | triggers `00 ff 00 ff` |
-| `bloc+0xA0` / `+0xA4` | options |
-| `bloc+0xAE` | marqueur `55 cc` (au lieu de `55 aa` à l'usine) |
+| `0x000` | header CRC (recomputed) |
+| `block+0x00` | profile flag `0x20200911` |
+| `block+0x28` | mapping section flag |
+| `block+0x2C..0x7B` | 20 function codes, **4 bytes each** |
+| `block+0x7C` | calibration flag, then 4 floats |
+| `block+0x90` / `+0x94` | deadzone: `00 42 00 80`, **LS 0->66** (the app maps 50 to 66) |
+| `block+0x98` / `+0x9C` | triggers `00 ff 00 ff` |
+| `block+0xA0` / `+0xA4` | options |
+| `block+0xAE` | marker `55 cc` instead of the factory `55 aa` |
 
 ### Verdict
 
-Un profil **cloné octet pour octet** depuis celui produit par l'app (marqueur
-`55 cc` inclus), écrit dans le record PC puis commité, **ne s'applique toujours
-pas** : le stick sort à ±32768.
+A profile **cloned byte for byte** from the app output (marker `55 cc` included),
+written into the PC record and committed, **still does not apply**: the stick goes
+to +/-32768.
 
-Le canal BLE `2B11` est donc un canal de configuration réel (l'app s'en sert),
-mais le record qu'il expose en mode PC n'est pas celui que le firmware applique
-au chemin XInput/2.4G. Piste restante : la configuration XInput est probablement
-portée par le **dock**, poussée dans la manette à l'établissement du lien 2.4G —
-ce qui expliquerait qu'aucune écriture, même valide, ne survive à la
-reconnexion.
+So the BLE `2B11` channel is a real configuration channel (the app uses it), but the
+record it exposes in PC mode is not the one the firmware applies to the XInput/2.4G
+path. Remaining lead: the XInput configuration is probably held by the **dock** and
+pushed into the pad when the 2.4G link is established, which would explain why no
+write, even a valid one, survives the reconnection.
 
-## 11. Test décisif : l'application officielle elle-même
+## 11. Decisive test: the official application itself
 
-L'app iOS connectée **en mode PC** (sélecteur sur « PC ») modifie deux réglages :
-deadzone stick gauche = 50 et A → B.
+The iOS app connected **in PC mode** (selector on "PC") changes two settings: left
+stick deadzone = 50 and A -> B.
 
-Diff des records relevés avant/après (`tools/record-diff.py`) :
+Diff of the records dumped before and after (`tools/record-diff.py`):
 
 ```
-0x000..0x001  CRC d'en-tête                     0xc323 → 0x9f4b
-0x031         bloc 0 +0x2d  mapping A → B       0x20   → 0x10
-0x099         bloc 0 +0x95  deadzone LS fin     0x80   → 0x42  (66)
+0x000..0x001  header CRC                     0xc323 -> 0x9f4b
+0x031         block 0 +0x2d  mapping A -> B  0x20   -> 0x10
+0x099         block 0 +0x95  deadzone LS end 0x80   -> 0x42  (66)
 ```
 
-Deux écritures **partielles**, marqueurs de bloc inchangés (`55 aa`).
+Two **partial** writes, block markers untouched (`55 aa`).
 
-Après extinction/rallumage :
+After power off/on:
 
-| Vérification | Résultat |
+| Check | Result |
 |---|---|
-| record conservé | ✅ CRC `0x9f4b`, deadzone `0→66`, `a→b` |
-| A appuyé sur la manette | ❌ sort en `BTN_SOUTH` (A) |
-| stick gauche à fond | ❌ ±32768, deadzone non appliquée |
+| record kept | yes, CRC `0x9f4b`, deadzone `0->66`, `a->b` |
+| A pressed on the pad | no, still `BTN_SOUTH` (A) |
+| left stick pushed to the stop | no, +/-32768, deadzone not applied |
 
-**Conclusion** : même le logiciel officiel ne modifie pas le comportement
-XInput par ce canal. Le record exposé sur `2B11` décrit donc le profil de la
-liaison **Bluetooth**, pas celui du lien 2.4G/dock — ce qui explique d'un coup
-pourquoi aucune de nos écritures, même parfaitement conformes, n'a jamais eu
-d'effet sur la manette utilisée via le dock.
+**Conclusion**: even the official software does not change XInput behaviour through
+this channel. The record exposed on `2B11` therefore describes the **Bluetooth**
+link profile, not the 2.4G/dock one, which explains in one go why none of our
+writes, however conforming, ever had an effect on the pad used through the dock.
 
-Corollaire : le canal BLE fait bien ce qu'il annonce (lecture, écriture
-partielle, sauvegarde), et notre outillage est correct ; c'est simplement le
-mauvais profil qui est éditable depuis Linux.
+Corollary: the BLE channel does what it says (read, partial write, save) and our
+tooling is correct; it is simply the wrong profile that is editable from Linux.
 
-## 12. Test en filaire : le dock est innocenté
+## 12. Wired test: the dock is cleared
 
-Le sélecteur sur **Xbox** et un câble USB-C font apparaître la manette en `2dc8:2030`
-(mode filaire). La manette reste joignable en BLE sous `81HB-X`, ce qui a permis de
-lui écrire une configuration puis de la mesurer sur son nœud `evdev` filaire.
+Selector on **Xbox** plus a USB-C cable makes the pad appear as `2dc8:2030` (wired
+mode). The pad is still reachable over BLE as `81HB-X`, which allowed writing a
+configuration and then measuring it on its wired `evdev` node.
 
-Configuration écrite dans **les trois profils** du record Xbox (deadzone
-`LS 0→66`, mapping `A→B`), commit `0x67`, en flash (CRC `0x3796`), puis
-débranchement/rebranchement.
+Configuration written into **all three profiles** of the Xbox record (deadzone
+`LS 0->66`, mapping `A->B`), commit `0x67`, in flash (CRC `0x3796`), then unplug and
+replug.
 
-Résultat : `BTN_SOUTH` pour A, stick à ±32768. **Aucun effet.**
+Result: `BTN_SOUTH` for A, stick at +/-32768. **No effect.**
 
-| Liaison testée | Configuration stockée | Appliquée |
+| Link tested | Configuration stored | Applied |
 |---|---|---|
-| dock 2.4G (mode PC) | ✅ | ❌ |
-| filaire USB (mode Xbox) | ✅ | ❌ |
-| écriture par l'app officielle (mode PC) | ✅ | ❌ |
+| 2.4G dock (PC mode) | yes | no |
+| wired USB (Xbox mode) | yes | no |
+| written by the official app (PC mode) | yes | no |
 
-Le dock est donc hors de cause : le même silence s'observe en filaire. Trois
-liaisons, trois échecs, y compris quand c'est le logiciel officiel qui écrit.
+The dock is therefore cleared: the same silence is observed when wired. Three
+links, three failures, including when the official software does the writing.
 
-`setConfigState` (`cmd 0x11`) existe dans la bibliothèque mais n'est utilisé que
-pour les modèles `UT2`/`lashen`, pas pour celui-ci.
+`setConfigState` (`cmd 0x11`) exists in the library but is only used for the
+`UT2`/`lashen` models, not this one.
 
-État final : records remis à zéro, manette rendue à son comportement d'usine.
+Final state: records wiped, pad back to its factory behaviour.

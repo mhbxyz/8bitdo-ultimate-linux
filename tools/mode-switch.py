@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Bascule la manette 8BitDo en mode configuration (équivalent du « knock » officiel).
+"""Switch the 8BitDo pad into configuration mode (the official "knock").
 
-En mode Xbox la manette n'expose aucun canal de configuration : le logiciel 8BitDo
-la force à ré-énumérer en lui envoyant une init Xbox puis une rafale de rumble sur
-l'endpoint interrupt OUT. Elle revient alors avec un autre PID et un canal HID
-(report 0x81) sur lequel passent les trames de configuration.
+In Xbox mode the pad exposes no configuration channel: the 8BitDo software makes
+it re-enumerate by sending an Xbox init sequence followed by a burst of rumble on
+the interrupt OUT endpoint. It then comes back with another PID and a HID channel
+(report 0x81) carrying the configuration frames.
 
-    uv run tools/mode-switch.py                # 1 tentative
-    uv run tools/mode-switch.py --repeat 3     # insiste, comme sur l'Ultimate 2.4G
+    uv run tools/mode-switch.py                # one attempt
+    uv run tools/mode-switch.py --repeat 3     # insist, like on the Ultimate 2.4G
     uv run tools/mode-switch.py --dry-run
 
-Le pilote `xpad` est détaché le temps de la séquence puis remis en place si la
-manette est toujours là (sinon il faut rebrancher le câble).
+The `xpad` driver is detached for the duration of the sequence and put back
+afterwards if the pad is still there, otherwise replug the cable.
+
+NOTE: on the Ultimate 3-mode this sequence is ignored, the pad speaks GIP and
+never re-enumerates. Kept because it documents what was tried.
 """
 
 from __future__ import annotations
@@ -26,17 +29,17 @@ import usb.util
 VID = 0x2DC8
 PID_3MODE_XBOX = 0x2030
 
-# Séquence relevée dans les captures USBPcap du logiciel officiel (famille Ultimate).
+# Sequence taken from USBPcap captures of the official software (Ultimate family).
 INIT_SEQUENCE: list[bytes] = [
     bytes.fromhex("01 03 02"),  # init LED Xbox
-    bytes.fromhex("02 08 03"),  # init contrôleur
+    bytes.fromhex("02 08 03"),  # controller init
     bytes.fromhex("01 03 02"),  # init LED Xbox (bis)
-    bytes.fromhex("01 03 06"),  # déclencheur du mode configuration
+    bytes.fromhex("01 03 06"),  # configuration mode trigger
     bytes.fromhex("00 08 00 01 00 00 00 00"),  # rumble gauche
     bytes.fromhex("00 08 00 00 01 00 00 00"),  # rumble droit
     bytes.fromhex("00 08 00 01 01 00 00 00"),  # les deux
     bytes.fromhex("00 08 00 05 01 00 00 00"),  # fort
-    bytes.fromhex("00 08 00 00 00 00 00 00"),  # arrêt
+    bytes.fromhex("00 08 00 00 00 00 00 00"),  # stop
 ]
 
 DELAY = 0.015  # 15 ms entre paquets, comme le logiciel officiel
@@ -55,19 +58,19 @@ def describe(dev: usb.core.Device) -> str:
         product = usb.util.get_string(dev, dev.iProduct) if dev.iProduct else ""
     except (usb.core.USBError, ValueError):
         product = "?"
-    return f"{dev.idVendor:04x}:{dev.idProduct:04x} bus {dev.bus} addr {dev.address} « {product} »"
+    return f'{dev.idVendor:04x}:{dev.idProduct:04x} bus {dev.bus} addr {dev.address} "{product}"'
 
 
 def send_knock(pid: int, interface: int, endpoint: int, delay: float, repeat: int) -> None:
     dev = usb.core.find(idVendor=VID, idProduct=pid)
     if dev is None:
-        sys.exit(f"périphérique {VID:04x}:{pid:04x} introuvable")
+        sys.exit(f"device {VID:04x}:{pid:04x} not found")
 
     print(f"cible : {describe(dev)}")
     detached = False
     try:
         if dev.is_kernel_driver_active(interface):
-            print(f"détachement de xpad (interface {interface})")
+            print(f"detaching xpad (interface {interface})")
             dev.detach_kernel_driver(interface)
             detached = True
     except (NotImplementedError, usb.core.USBError) as exc:
@@ -84,7 +87,7 @@ def send_knock(pid: int, interface: int, endpoint: int, delay: float, repeat: in
                 try:
                     dev.write(endpoint, packet, timeout=1000)
                 except usb.core.USBError as exc:
-                    print(f"  transfert interrompu ({exc}) — la manette a probablement décroché")
+                    print(f"  transfer interrupted ({exc}), the pad probably dropped off")
                     gone = True
                     break
                 time.sleep(delay)
@@ -105,7 +108,7 @@ def send_knock(pid: int, interface: int, endpoint: int, delay: float, repeat: in
                 try:
                     usb.util.dispose_resources(dev)
                     dev.attach_kernel_driver(interface)
-                    print("  xpad rattaché")
+                    print("  xpad reattached")
                 except usb.core.USBError as exc:
                     print(f"  rattachement de xpad impossible ({exc}) — rebrancher le câble")
 
@@ -136,20 +139,20 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.dry_run:
-        print("séquence de bascule :")
+        print("switch sequence:")
         for packet in INIT_SEQUENCE:
             print(f"  {packet.hex(' ')}")
         return 0
 
     BEFORE = snapshot()
-    print("périphériques 2dc8 avant :", BEFORE)
+    print("2dc8 devices before:", BEFORE)
     send_knock(args.pid, args.interface, args.endpoint, args.delay, args.repeat)
 
-    print("attente de la ré-énumération…")
+    print("waiting for re-enumeration...")
     found = wait_reenumeration(args.timeout)
     if not found:
         print(
-            "aucun nouveau périphérique 2dc8:* détecté.",
+            "no new 2dc8:* device detected.",
             file=sys.stderr,
         )
         return 1

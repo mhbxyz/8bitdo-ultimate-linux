@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Lit le record de configuration 8BitDo en BLE, en une seule session.
+"""Read the 8BitDo configuration record over BLE, in a single session.
 
-La manette n'annonce que quelques secondes après réveil et se rendort dès que la
-liaison tombe : ce script attend son annonce (scan en boucle), se connecte, lit
-les 1652 octets, analyse et sauvegarde — sans jamais relâcher la connexion entre
-deux trames.
+The pad only advertises a few seconds after waking and goes back to sleep as soon
+as the link drops: this script waits for the advertisement (scan loop), connects,
+reads the 1652 bytes, analyses and saves, without ever releasing the connection
+between two frames.
 
-    uv run tools/ble-dump.py                 # attend jusqu'à 180 s
+    uv run tools/ble-dump.py                 # wait up to 180 s
     uv run tools/ble-dump.py --wait 300
     uv run tools/ble-dump.py --address E4:17:D8:18:09:23
 """
@@ -61,29 +61,29 @@ async def wait_for_pad(wait: float, address: str | None) -> BLEDevice | None:
 async def read_record(client: BleakClient, total: int, attempts: int = 4) -> bytes | None:
     """Lit le record complet.
 
-    Le pad renvoie en général 45 octets par trame, mais parfois moins (frontière de
-    chunk interne). On avance donc au premier octet non lu ; si la réponse est vide
+    The pad usually returns 45 bytes per frame, sometimes fewer (internal chunk
+    boundary). We therefore advance to the first unread byte; if the reply is empty
     on retombe sur le multiple de 45 suivant.
     """
     queue: asyncio.Queue[bytes] = asyncio.Queue()
     await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
     reader = FrameReader(queue)
     record = bytearray(total)
-    written = bytearray(total)  # 1 = octet effectivement reçu
+    written = bytearray(total)  # 1 = byte actually received
     cursor = 0
     stalls = 0
     while cursor < total and stalls < attempts:
         try:
             await client.write_gatt_char(CHAR_UUID, build_read(cursor, CHUNK, total), response=True)
         except Exception as exc:  # noqa: BLE001
-            print(f"  écriture impossible à {cursor} : {exc}", file=sys.stderr)
+            print(f"  write impossible at {cursor}: {exc}", file=sys.stderr)
             return None
         frame = await reader.next_frame(1.5)
         if frame is None or frame.offset != cursor:
             stalls += 1
             reader.reset()
             print(
-                f"  trame inattendue à {cursor} "
+                f"  unexpected frame at {cursor} "
                 f"(offset={getattr(frame, 'offset', None)}, len={getattr(frame, 'length', None)})",
                 flush=True,
             )
@@ -98,14 +98,14 @@ async def read_record(client: BleakClient, total: int, attempts: int = 4) -> byt
             if cursor % (CHUNK * 12) < CHUNK:
                 print(f"  {cursor:4d}/{total}", flush=True)
         else:
-            # réponse vide : on tente le prochain multiple de 45
+            # empty reply: try the next multiple of 45
             stalls += 1
             cursor = ((cursor // CHUNK) + 1) * CHUNK
             await asyncio.sleep(0.1)
     got = sum(written)
-    print(f"  {got} octets reçus sur {total}", flush=True)
+    print(f"  {got} bytes received out of {total}", flush=True)
     if got < total * 0.95:
-        print("  lecture incomplète", file=sys.stderr)
+        print("  incomplete read", file=sys.stderr)
     return bytes(record)
 
 
@@ -139,12 +139,12 @@ async def main() -> int:
     print(f"attente de la manette (max {args.wait:.0f}s)…", flush=True)
     device = await wait_for_pad(args.wait, args.address)
     if device is None:
-        print("manette jamais annoncée", file=sys.stderr)
+        print("pad never advertised", file=sys.stderr)
         return 1
-    print(f"trouvée : « {device.name} » {device.address}", flush=True)
+    print(f"found: \"{device.name}\" {device.address}", flush=True)
 
     async with BleakClient(device) as client:
-        print("connecté", flush=True)
+        print("connected", flush=True)
         record = await read_record(client, args.size)
         if record is None:
             return 1
@@ -156,7 +156,7 @@ async def main() -> int:
         print(json.dumps(meta, indent=2))
         if args.commit:
             await client.write_gatt_char(CHAR_UUID, build_commit(), response=True)
-            print("commit envoyé")
+            print("commit sent")
         await asyncio.sleep(0.5)
     return 0
 

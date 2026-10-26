@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Banc d'essai GIP pour la 8BitDo Ultimate 3-mode.
+"""GIP test bench for the 8BitDo Ultimate 3-mode.
 
-Le pad expose l'interface XGIP (ff/47/d0) et ne parle QUE GIP : les paquets
-« Xbox 360 » sont ignorés, et il n'émet rien tant qu'il n'a pas reçu un
-`GIP_CMD_POWER` (0x05) avec le mode ON (0x00).
+The pad exposes the XGIP interface (ff/47/d0) and only speaks GIP: the "Xbox 360"
+packets are ignored, and it emits nothing until it has received a GIP_CMD_POWER
+(0x05) with mode ON (0x00).
 
-    uv run tools/gip-probe.py listen            # handshake + dump des trames 3 s
+    uv run tools/gip-probe.py listen            # handshake + dump frames for 3 s
     uv run tools/gip-probe.py send 0b 81 05 00 21 01
-    uv run tools/gip-probe.py ack-scan          # quelles commandes sont acquittées
-    uv run tools/gip-probe.py hid 81 05 00 21 01   # HID_REPORT + réponses
+    uv run tools/gip-probe.py ack-scan          # which commands get acknowledged
+    uv run tools/gip-probe.py hid 81 05 00 21 01   # HID_REPORT + replies
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ class Gip:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("action", choices=["listen", "send", "ack-scan", "hid"])
-    ap.add_argument("args", nargs="*", help="octets en hexadécimal")
+    ap.add_argument("args", nargs="*", help="bytes in hexadecimal")
     ap.add_argument("--pid", type=lambda s: int(s, 0), default=PID)
     ap.add_argument("--duration", type=float, default=2.0)
     a = ap.parse_args()
@@ -117,7 +117,7 @@ def main() -> int:
             print("  <-", Gip.describe(raw))
 
         if a.action == "listen":
-            print(f"écoute {a.duration}s :")
+            print(f"listening for {a.duration}s:")
             for raw in gip.drain(a.duration):
                 print("  <-", Gip.describe(raw))
 
@@ -147,7 +147,7 @@ def main() -> int:
                 print("  <-", Gip.describe(raw))
     finally:
         gip.close()
-        print("(xpad rattaché)")
+        print("(xpad reattached)")
     return 0
 
 

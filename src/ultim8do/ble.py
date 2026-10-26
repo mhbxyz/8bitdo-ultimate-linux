@@ -1,15 +1,15 @@
-"""Transport BLE du protocole de configuration 8BitDo (famille « Three/Gamesir »).
+"""BLE transport for the 8BitDo configuration protocol ("Three/Gamesir" family).
 
-L'app Android de 8BitDo configure cette famille **exclusivement en BLE** : le câble
-USB ne sert qu'à l'alimentation. La trame est celle du USB sans l'encapsulation HID
-(pas d'ID de rapport, pas de préfixe de longueur) :
+The 8BitDo Android app configures this family **over BLE only**; the USB cable
+only provides power. The frame is the USB one without the HID encapsulation
+(no report id, no length prefix):
 
-    requête : 04 | u16 cmd | u16 sub | u16 len | u16 crc | u32 total | u32 offset | data
-    réponse : 04 | 00 | u16 cmd | u16 len | u16 crc | u32 total | u32 offset | data
+    request  : 04 | u16 cmd | u16 sub | u16 len | u16 crc | u32 total | u32 offset | data
+    response : 04 | 00 | u16 cmd | u16 len | u16 crc | u32 total | u32 offset | data
 
 Service   : 00010203-0405-0607-0809-0A0B0C0D1910
-Caractér. : 00010203-0405-0607-0809-0A0B0C0D2B11
-MTU       : 67 pour cette famille (charge utile ≤ 45 o par trame de config)
+Char.     : 00010203-0405-0607-0809-0A0B0C0D2B11
+MTU       : 67 for this family, so at most 45 bytes of config per frame
 """
 
 from __future__ import annotations
@@ -99,9 +99,9 @@ def build_request(
 
 async def scan(timeout: float = 8.0) -> list[BLEDevice]:
     found = await BleakScanner.discover(timeout=timeout)
-    # On ne garde que les identités de configuration (« 81HB-X/D/W »). La manette
-    # annonce aussi une identité HID « 8BitDo Ultimate 3mode Xbox » qui n'expose
-    # pas la caractéristique de configuration.
+    # Keep only the configuration identities ("81HB-X/D/W"). The pad also
+    # advertises a HID identity ("8BitDo Ultimate 3mode Xbox") that does not
+    # expose the configuration characteristic.
     return [d for d in found if (d.name or "").startswith(NAME_PREFIXES)]
 
 
@@ -149,16 +149,16 @@ class BleConfig:
         return bytes(buf[:total])
 
     async def version(self) -> bytes | None:
-        """Requête courte `81 05 00 21 01` sans l'encapsulation HID."""
+        """Short `81 05 00 21 01` query without the HID encapsulation."""
         return await self.request(bytes.fromhex("04 05 00 21 01"))
 
 
 class FrameReader:
-    """Réassemble les trames BLE, éventuellement fragmentées sur plusieurs notifications.
+    """Reassemble BLE frames, which may span several notifications.
 
-    Le pad peut découper une réponse de 61 octets (16 d'en-tête + 45 de données) en
-    plusieurs notifications, et renvoyer parfois moins de 45 octets de données. On
-    accumule donc les notifications jusqu'à disposer de l'en-tête complet puis de
+    The pad can split a 61 byte reply (16 bytes header + 45 bytes data) across
+    several notifications, and sometimes returns fewer than 45 bytes of data. We
+    therefore accumulate notifications until the full header is available, then
     `16 + len` octets.
     """
 
@@ -185,7 +185,7 @@ class FrameReader:
 
 
 async def read_record(client: "BleakClient", total: int = 532) -> bytes:
-    """Lit le record complet (gère les réponses courtes et fragmentées)."""
+    """Read the whole record, handling short and fragmented replies."""
     queue: asyncio.Queue[bytes] = asyncio.Queue()
     await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
     reader = FrameReader(queue)
@@ -213,7 +213,7 @@ async def read_record(client: "BleakClient", total: int = 532) -> bytes:
 
 
 async def write_record(client: "BleakClient", record: bytes, total: int | None = None) -> int:
-    """Écrit le record par tranches de 45 octets ; renvoie le nombre d'octets écrits."""
+    """Write the record in 45 byte chunks; returns the number of bytes written."""
     queue: asyncio.Queue[bytes] = asyncio.Queue()
     await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
     reader = FrameReader(queue)
@@ -226,16 +226,16 @@ async def write_record(client: "BleakClient", record: bytes, total: int | None =
         )
         frame = await reader.next_frame(2.0)
         if frame is None or frame.command != CMD_WRITE:
-            raise RuntimeError(f"écriture refusée à l'offset {offset}")
+            raise RuntimeError(f"write refused at offset {offset}")
         written += len(chunk)
     return written
 
 
-# Sous-codes de sauvegarde relevés dans les binaires officiels :
-#   0x67 : canal getSaveCustomConfigChannel (libadvancelib.so, app Android) — validé
-#          sur matériel : le record survit à un cycle d'alimentation en mode PC.
+# Save sub-codes found in the official binaries:
+#   0x67 : getSaveCustomConfigChannel (libadvancelib.so, Android app), verified on
+#          hardware: the record survives a power cycle in PC mode.
 #   0x15 : famille Bluetooth/2.4G (Ultimate BT, Ultimate 2.4G).
-#   0x123 : Ultimate 2 (mode PC, autre génération).
+#   0x123 : Ultimate 2 (PC mode, previous generation).
 COMMIT_SUBS = (0x67, 0x15)
 
 
@@ -244,9 +244,9 @@ async def commit(
 ) -> list[int]:
     """Envoie la ou les commandes de sauvegarde en flash.
 
-    `0x67` est le code utilisé par l'app officielle (`getSaveCustomConfigChannel`)
-    et validé sur la 3-mode : le premier essai est donc le bon. Les autres codes
-    de la famille sont envoyés ensuite, sans effet s'ils ne s'appliquent pas.
+    `0x67` is the code used by the official app (getSaveCustomConfigChannel) and
+    verified on the 3-mode, so the first attempt is the right one. The other codes
+    of the family are sent afterwards, they are no-ops when they do not apply.
     """
     queue: asyncio.Queue[bytes] = asyncio.Queue()
     await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
@@ -266,10 +266,10 @@ async def commit(
 
 
 async def report_state(client: "BleakClient", enable: bool, total: int = 532) -> bytes | None:
-    """Coupe (0) ou relance (1) le flux de rapports d'entrée.
+    """Stop (0) or resume (1) the input report stream.
 
-    Le logiciel officiel encadre ses écritures avec cette commande ; sur certains
-    firmwares, les écritures sont ignorées tant que les rapports sont actifs.
+    The official software wraps its writes with this command; on some firmwares
+    writes are ignored while reports are active.
     """
     queue: asyncio.Queue[bytes] = asyncio.Queue()
     await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))

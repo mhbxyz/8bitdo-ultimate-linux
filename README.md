@@ -1,84 +1,92 @@
-# ultim8do — 8BitDo Ultimate 3-mode Controller sous Linux
+# ultim8do, 8BitDo Ultimate 3-mode controller on Linux
 
-Configuration de la manette **8BitDo Ultimate 3-mode Controller for Xbox**
-(`2dc8:2030`) depuis Linux : profils, deadzones sticks/triggers, remapping des
-boutons, options — sans passer par *Ultimate Software X* (UWP Windows).
+Configuring the **8BitDo Ultimate 3-mode Controller for Xbox** (`2dc8:2030`) from
+Linux: profiles, stick and trigger deadzones, button remapping, options, without
+going through *Ultimate Software X* (Windows UWP app).
 
-## Comment ça marche
+## How it works
 
-La manette n'expose **aucun canal de configuration en USB**. Elle parle GIP sur son
-interface XGIP (`ff/47/d0`), refuse les trames « Xbox 360 » des autres Ultimate, et
-ignore `GIP_CMD_HID_REPORT`. En revanche, son identité Bluetooth `81HB-*` expose un
-service GATT de configuration, et c'est par là que passe l'app Android officielle.
+The pad exposes **no configuration channel over USB**. It speaks GIP on its XGIP
+interface (`ff/47/d0`), ignores the "Xbox 360" frames used by other Ultimate
+models, and ignores `GIP_CMD_HID_REPORT`. Its Bluetooth identity `81HB-*` does
+expose a GATT configuration service, and that is the path the official Android app
+uses.
 
 ```
 BLE service 00010203-0405-0607-0809-0A0B0C0D1910
     char    00010203-0405-0607-0809-0A0B0C0D2B11   (write + notify)
 
-requête : 04 | u16 cmd | u16 sub | u16 len | u16 crc | u32 total | u32 offset | data
-réponse : 04 | 00      | u16 cmd | u16 len | u16 crc | u32 total | u32 offset | data
+request  : 04 | u16 cmd | u16 sub | u16 len | u16 crc | u32 total | u32 offset | data
+response : 04 | 00      | u16 cmd | u16 len | u16 crc | u32 total | u32 offset | data
 ```
 
-Record de configuration : **532 octets**, en-tête CRC-16/KERMIT sur `record[2:]`,
-puis la structure de la famille Ultimate (sans macros), avec 3 profils.
+Configuration record: **532 bytes**, CRC-16/KERMIT header over `record[2:]`, then
+the Ultimate family structure (without macros), with 3 profiles.
 
-Détails complets, mesures et preuves : [`docs/03-protocole-ble.md`](docs/03-protocole-ble.md).
+Full details, measurements and evidence: [`docs/03-protocole-ble.md`](docs/03-protocole-ble.md).
 
-## Mise en route
+## Getting started
 
-Côté manette : sélecteur sur la position **Bluetooth** (le premier symbole), puis
-**X + Start 3 s** pour l'appairage. La manette annonce alors `81HB-D`.
+On the pad: set the selector to the **Bluetooth** position (first symbol), then
+hold **X + Start for 3 s** to pair. The pad then advertises as `81HB-D`.
 
 ```bash
 uv sync
-sudo ./scripts/setup-permissions.sh     # udev (accès USB/hidraw) + usbmon
+sudo ./scripts/setup-permissions.sh     # udev (USB/hidraw access) + usbmon
 
-uv run ultim8do dump                    # lit et affiche le record
+uv run ultim8do dump                    # read and print the record
 ```
 
-## Utilisation
+## Usage
 
 ```bash
 uv run ultim8do dump --json --save capture/record.bin
-uv run ultim8do set --slot 0 --name SALON
-uv run ultim8do set --slot 0 --stick-deadzone 12 --trigger-deadzone 8
 uv run ultim8do set --slot 0 --map a=b --map b=a
-uv run ultim8do profile 1
+uv run ultim8do set --slot 0 --stick-deadzone 12 --trigger-deadzone 8
+uv run ultim8do set --slot 1 --enable
 ```
 
-`set` écrit par tranches de 45 octets, envoie le commit (`cmd 6 sub 0x15`) puis
-relit le record pour vérifier.
+`set` writes in 45 byte chunks, sends the commit and reads the record back to
+verify.
 
-Codes de fonction disponibles : `none start l3 r3 select x y right left down up
-lb rb b a lt rt menu home p1 p2 p3 p4`.
+Available function codes: `none start l3 r3 select x y right left down up lb rb b
+a lt rt menu home p1 p2 p3 p4`.
 
-## État
+## Status
 
-| Phase | État |
+| Phase | State |
 |---|---|
-| 1. Identification USB (`lsusb`, descripteurs) | ✅ [`docs/01-device-identification.md`](docs/01-device-identification.md) |
-| 2. Capture du trafic | ✅ via BLE (le canal USB n'existe pas sur ce modèle) |
-| 3. Comparaison des réglages | ✅ lecture/écriture/commit vérifiés sur matériel |
-| 4. REA des binaires 8BitDo | ✅ [`docs/02-protocole.md`](docs/02-protocole.md), [`docs/re/`](docs/re/) |
-| 5. Réimplémentation Python | ✅ `src/ultim8do/` (transport BLE, record, CLI) — lecture/écriture/commit fonctionnels, mais le firmware n'applique pas ce record au mode XInput (voir §9 de la doc) |
-| 6. Interface Linux native | ⏳ |
+| 1. USB identification (`lsusb`, descriptors) | done, [`docs/01-device-identification.md`](docs/01-device-identification.md) |
+| 2. Traffic capture | done over BLE (this model has no USB configuration channel) |
+| 3. Setting comparison | done, read/write/commit verified on hardware |
+| 4. REA of the 8BitDo binaries | done, [`docs/02-protocole.md`](docs/02-protocole.md), [`docs/re/`](docs/re/) |
+| 5. Python reimplementation | done, `src/ultim8do/` (BLE transport, record, CLI) |
+| 6. Native Linux interface | not started |
 
-Limite connue : le `commit` **persiste en mode Bluetooth/D** (vérifié après cycle
-d'alimentation) mais **pas encore en mode PC/W** — voir
-[`docs/03-protocole-ble.md`](docs/03-protocole-ble.md#5-limite-connue--le-commit-du-record-pc-ne-persiste-pas).
+**Important limitation.** Read, write and commit all work, and the record is stored
+in flash, but the firmware **never applies it** to the XInput path. Even the
+official software does not change that record when it applies a mapping, so the
+real settings travel through a private driver channel. Details and evidence in
+[`docs/03-protocole-ble.md`](docs/03-protocole-ble.md) sections 5 to 14.
 
-La configuration est aussi **par mode**. Le record lu en mode Bluetooth
-(`record id 3`, `gamepad_mode 1`) est distinct de celui du mode PC/2.4G
-(`gamepad_mode 3`) : pour configurer ce dernier, basculer le sélecteur sur « PC »
-et relancer les mêmes commandes.
+The configuration is also **per mode**: the record read in Bluetooth mode has a
+different `record id` from the PC/2.4G one.
 
-## Outils de diagnostic
+## What actually works today
+
+**Ultimate Software X running in a Windows VM**, with the USB controller passed
+through over vfio. That is the only known way to configure this pad from a Linux
+host, and it is fully documented in `docs/02-protocole.md` section 13, with the
+helper script `scripts/usb-passthrough.sh`.
+
+## Diagnostic tools
 
 ```bash
-./tools/dump-device.sh          # état USB : descripteurs, interfaces, hidraw
-./tools/usbwatch.sh             # surveille les (re)énumérations 2dc8:*
-uv run tools/gip-probe.py listen   # parle GIP : power-on, identify, dump des trames
-uv run tools/ble-probe.py scan     # scanne les manettes 81HB-*
+./tools/dump-device.sh             # USB state: descriptors, interfaces, hidraw
+./tools/usbwatch.sh                # watch 2dc8:* (re)enumerations
+uv run tools/gip-probe.py listen   # speak GIP: power-on, identify, frame dump
+uv run tools/ble-probe.py scan     # scan for 81HB-* pads
+uv run tools/record-diff.py a.bin b.bin   # diff two record dumps
 ```
 
 ## Tests

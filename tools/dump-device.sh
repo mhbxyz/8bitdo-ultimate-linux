@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Photographie l'état USB des périphériques 8BitDo présents.
+# Take a snapshot of the USB state of the 8BitDo devices present.
 set -u
 VID=${1:-2dc8}
 echo "=== lsusb ==="
-lsusb | grep -i -E "8bitdo|$VID" || echo "(aucun)"
+lsusb | grep -i -E "8bitdo|$VID" || echo "(none)"
 for d in /sys/bus/usb/devices/*; do
     [ -f "$d/idVendor" ] && [ "$(cat "$d/idVendor")" = "$VID" ] || continue
     echo

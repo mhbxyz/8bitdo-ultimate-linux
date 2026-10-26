@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Sonde le canal de configuration BLE d'une manette 8BitDo (81HB-*).
+"""Probe the BLE configuration channel of an 8BitDo pad (81HB-*).
 
-    uv run tools/ble-probe.py scan            # liste les manettes visibles
-    uv run tools/ble-probe.py version         # requêtes courtes, dump brut
-    uv run tools/ble-probe.py read            # lit et analyse le record (1652 o)
+    uv run tools/ble-probe.py scan            # list visible pads
+    uv run tools/ble-probe.py version         # short queries, raw dump
+    uv run tools/ble-probe.py read            # read the record (1652 bytes)
     uv run tools/ble-probe.py read --size 1592
 
-Le record est sauvegardé dans capture/record-ble.bin.
+The record is saved to capture/record-ble.bin.
 """
 
 from __future__ import annotations
@@ -53,12 +53,12 @@ async def pick(address: str | None = None) -> BLEDevice | None:
         device = await BleakScanner.find_device_by_address(address, timeout=10.0)
         if device is not None:
             return device
-        print(f"{address} introuvable, scan générique…", file=sys.stderr)
+        print(f"{address} not found, generic scan...", file=sys.stderr)
     else:
         print("scan BLE (8 s)…")
     devices = await scan(8.0)
     for d in devices:
-        print(f"  {d.address}  « {d.name} »")
+        print(f'  {d.address}  "{d.name}"')
     return devices[0] if devices else None
 
 
@@ -71,12 +71,12 @@ async def read_record(client: BleakClient, total: int) -> bytes | None:
         try:
             await client.write_gatt_char(CHAR_UUID, build_read(offset, CHUNK, total), response=True)
         except Exception as exc:  # noqa: BLE001
-            print(f"  écriture impossible à l'offset {offset} : {exc}", file=sys.stderr)
+            print(f"  write impossible at offset {offset}: {exc}", file=sys.stderr)
             break
         try:
             raw = await asyncio.wait_for(queue.get(), 1.5)
         except asyncio.TimeoutError:
-            print(f"  pas de réponse à l'offset {offset}", file=sys.stderr)
+            print(f"  no reply at offset {offset}", file=sys.stderr)
             break
         length = struct.unpack_from("<H", raw, 4)[0]
         echoed_offset = struct.unpack_from("<I", raw, 12)[0]
@@ -111,16 +111,16 @@ async def main() -> int:
 
     if args.action == "scan":
         for d in await scan(10.0):
-            print(f"{d.address}  « {d.name} »")
+            print(f'{d.address}  "{d.name}"')
         return 0
 
     device = await pick(args.address)
     if device is None:
-        print("manette introuvable — appuyer sur le bouton Xbox pour la réveiller", file=sys.stderr)
+        print("pad not found, press the Xbox button to wake it up", file=sys.stderr)
         return 1
 
     async with BleakClient(device) as client:
-        print(f"connecté à « {getattr(device, 'name', '?')} »")
+        print(f"connected to \"{getattr(device, 'name', '?')}\"")
         if args.action == "version":
             for label, frame in VERSION_FRAMES.items():
                 queue: asyncio.Queue[bytes] = asyncio.Queue()
@@ -128,9 +128,9 @@ async def main() -> int:
                 await client.write_gatt_char(CHAR_UUID, frame, response=True)
                 try:
                     raw = await asyncio.wait_for(queue.get(), 1.0)
-                    print(f"  {label:18s} → {raw.hex(' ')}")
+                    print(f"  {label:18s} -> {raw.hex(' ')}")
                 except asyncio.TimeoutError:
-                    print(f"  {label:18s} → pas de réponse")
+                    print(f"  {label:18s} -> no reply")
                 await client.stop_notify(CHAR_UUID)
             return 0
 
@@ -140,7 +140,7 @@ async def main() -> int:
             return 1
         with open("capture/record-ble.bin", "wb") as fh:
             fh.write(record)
-        print(f"enregistré : capture/record-ble.bin ({len(record)} o, md5 {hashlib.md5(record).hexdigest()})")
+        print(f"saved: capture/record-ble.bin ({len(record)} bytes, md5 {hashlib.md5(record).hexdigest()})")
         analyse(record)
     return 0
 

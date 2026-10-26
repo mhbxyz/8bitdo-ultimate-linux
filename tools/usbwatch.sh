@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Surveille les (re)énumérations des périphériques 8BitDo (VID 2dc8).
-# Affiche PID, produit, interfaces et nœuds hidraw/input associés.
+# Watch (re)enumerations of 8BitDo devices (VID 2dc8).
+# Prints PID, product, interfaces and the related hidraw/input nodes.
 set -u
 last=""
 while true; do

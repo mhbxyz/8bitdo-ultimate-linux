@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Compare deux relevés de record 8BitDo et affiche les octets qui ont changé.
+"""Compare two 8BitDo record dumps and show the bytes that changed.
 
-    uv run tools/record-diff.py capture/avant.bin capture/apres.bin
+    uv run tools/record-diff.py capture/before.bin capture/after.bin
 
-Sert d'oracle : on relève le record, on change UN réglage avec le logiciel
-officiel, on relève à nouveau, et les octets modifiés donnent l'offset et le
-format du champ.
+Acts as an oracle: dump the record, change ONE setting with the official
+software, dump again, and the modified bytes give the offset and the encoding of
+that field.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from ultim8do.record import BLOCK_SIZE, HEADER_SIZE, SLOTS, block_offset
 def offset_label(index: int) -> str:
     """Traduit un offset brut en position lisible dans la structure connue."""
     if index < HEADER_SIZE:
-        return f"en-tête (+0x{index:02x})"
+        return f"header (+0x{index:02x})"
     for slot in range(SLOTS):
         base = block_offset(slot)
         if base <= index < base + BLOCK_SIZE:
@@ -43,7 +43,7 @@ def main() -> int:
         return 1
 
     if len(before) != len(after):
-        print(f"tailles différentes : {len(before)} vs {len(after)}", file=sys.stderr)
+        print(f"different sizes: {len(before)} vs {len(after)}", file=sys.stderr)
 
     changed = [
         (i, b, a)
@@ -51,10 +51,10 @@ def main() -> int:
         if b != a
     ]
     if not changed:
-        print("aucune différence")
+        print("no difference")
         return 0
 
-    print(f"{len(changed)} octet(s) modifié(s)\n")
+    print(f"{len(changed)} byte(s) changed\n")
     # regrouper les octets contigus
     runs: list[list[tuple[int, int, int]]] = []
     for item in changed:
@@ -73,11 +73,11 @@ def main() -> int:
             fmt = {2: "<H", 4: "<I", 8: "<Q"}[len(run)]
             extra = (
                 f"  u{len(run) * 8}: 0x{struct.unpack(fmt, old)[0]:x}"
-                f" → 0x{struct.unpack(fmt, new)[0]:x}"
+                f" -> 0x{struct.unpack(fmt, new)[0]:x}"
             )
         print(f"  0x{start:03x}..0x{end:03x} ({len(run):2d} o) {label}")
-        print(f"      avant : {old.hex(' ')}")
-        print(f"      après : {new.hex(' ')}{extra}")
+        print(f"      before: {old.hex(' ')}")
+        print(f"      after : {new.hex(' ')}{extra}")
     return 0
 
 

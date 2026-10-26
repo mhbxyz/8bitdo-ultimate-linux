@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ultim8do"
 version = "0.0.1"
-description = "Protocole 8BitDo Ultimate 3-mode sous Linux (GIP + configuration)"
+description = "8BitDo Ultimate 3-mode controller protocol on Linux (GIP + configuration)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

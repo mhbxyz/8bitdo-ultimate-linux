@@ -1,23 +1,23 @@
-# 8BitDo — accès utilisateur aux périphériques USB et aux nœuds hidraw
+# 8BitDo, user access to the USB devices and the hidraw nodes
 #
-# En mode Xbox la manette 8BitDo Ultimate 3-mode (2dc8:2030) expose l'interface
-# XGIP (ff/47/d0) : aucun hidraw n'est créé. Pour parler au pad (détacher xpad,
-# envoyer le « knock » de bascule en mode configuration), l'utilisateur doit
-# pouvoir ouvrir le nœud usbfs /dev/bus/usb/BBB/DDD.
+# In Xbox mode the 8BitDo Ultimate 3-mode (2dc8:2030) exposes the XGIP interface
+# (ff/47/d0): no hidraw node is created. To talk to the pad (detach xpad, send the
+# "knock" that switches it to configuration mode), the user must be allowed to
+# open the usbfs node /dev/bus/usb/BBB/DDD.
 #
-# On n'utilise pas TAG+="uaccess" seul : l'ACL dépend de systemd-logind et d'une
-# session de siège active, ce qui n'est pas toujours le cas ici. Le groupe
-# `input` est plus déterministe (l'utilisateur y est déjà).
+# TAG+="uaccess" alone is not used: the ACL depends on systemd-logind and on an
+# active seat session, which is not always the case here. The `input` group is
+# more deterministic (the user is already in it).
 #
-# Installation : sudo ./scripts/setup-permissions.sh
+# Installation: sudo ./scripts/setup-permissions.sh
 
-# Tous les périphériques USB 8BitDo (tous PID : le pad change de PID en mode config)
+# All 8BitDo USB devices (any PID, the pad changes PID in configuration mode)
 SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", MODE="0660", GROUP="input"
 SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", TAG+="uaccess"
 
-# Nœuds hidraw des modes HID (config / DInput / dongle 2.4G)
+# hidraw nodes of the HID modes (config / DInput / 2.4G dongle)
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2dc8", MODE="0660", GROUP="input"
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2dc8", TAG+="uaccess"
 
-# Entrées (joystick/event) : permet de garder les rapports XInput drainés
+# Input nodes (joystick/event): keeps the XInput reports drained
 SUBSYSTEM=="input", ATTRS{idVendor}=="2dc8", MODE="0660", GROUP="input"
