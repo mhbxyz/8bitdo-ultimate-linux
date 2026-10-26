@@ -240,3 +240,49 @@ L'écriture est acceptée mais non conservée : il manque vraisemblablement le
 message de « mode configuration » que le pilote Windows (`XboxGIP_Admin`) envoie
 avant d'ouvrir la session (`00 0F 00 00 00 00 FF 00 EB`), message qui n'a pas
 d'équivalent évident sur le fil.
+
+## 8. Point 3 : profil complet + `cmd 6 sub 0`, toujours rien
+
+Test final sur le canal GIP : record complet relu (532 octets servis, la lecture
+s'arrête là même quand on annonce `total = 832`), profil reconstruit pour les
+**trois** blocs (flag `0x20200911`, 20 codes de mapping, calibration, deadzone
+`LS 0→66`, triggers), écrit en 26 tranches de 32 octets, puis **`cmd 6 sub 0`**
+(la commande d'application du projet communautaire) et `sub 0x67`.
+
+Après cycle d'alimentation : `BTN_SOUTH` pour A, stick à ±32768. Aucun effet.
+
+Conclusion : sur ce modèle, ni le BLE ni le canal GIP `0x13` ne permettent de
+faire appliquer une configuration au chemin XInput. La lecture fonctionne, les
+écritures sont acquittées, l'application ne fait rien.
+
+## 9. Ticket ouvert en amont
+
+Le travail a été partagé avec l'auteur du seul projet qui cible cette famille :
+<https://github.com/AriesAlex/8bitdo-gyro/issues/1>
+
+Question posée : le message de « mode configuration » que son pilote Windows
+envoie avant d'ouvrir la session (`00 0F 00 00 00 00 FF 00 EB`) n'a pas
+d'équivalent identifié sur le fil, et le record servi par notre manette fait
+532 octets et non 832.
+
+## 10. VM Windows (reproductible)
+
+Mise en place pour observer le logiciel officiel :
+
+```bash
+docker run -d --name win \
+  --device=/dev/kvm --device=/dev/net/tun --device=/dev/bus/usb --cap-add NET_ADMIN \
+  -p 8006:8006 \
+  -e VERSION=11 -e RAM_SIZE=6G -e CPU_CORES=4 -e DISK_SIZE=40G \
+  -e ARGUMENTS="-device usb-host,vendorid=0x2dc8,productid=0x2030" \
+  -v ~/vms/windows:/storage -v ~/vms/shared:/shared \
+  --stop-timeout 120 dockurr/windows
+```
+
+Windows s'installe seul, l'interface est sur <http://localhost:8006>, le dossier
+partagé apparaît en `Z:`.
+
+**Blocage** : le passthrough USB échoue car la manette **se réénumère dès qu'un
+processus ouvre son interface** (`libusb_release_interface: -4 [NO_DEVICE]`), donc
+QEMU perd le handle. Pistes : passthrough du contrôleur PCI entier, port USB
+différent, ou hub intermédiaire.
