@@ -286,3 +286,37 @@ partagé apparaît en `Z:`.
 processus ouvre son interface** (`libusb_release_interface: -4 [NO_DEVICE]`), donc
 QEMU perd le handle. Pistes : passthrough du contrôleur PCI entier, port USB
 différent, ou hub intermédiaire.
+
+## 11. Écriture GIP complète : ça persiste, mais ça ne s'applique pas
+
+Le canal GIP `0x13` accepte une écriture de **532 octets** (et non 832) :
+17 tranches de 32 octets, puis `cmd 6 sub 0`, puis fermeture de session
+`cmd 7 sub 1`. La relecture après cycle d'alimentation confirme que **tout est
+conservé en flash** :
+
+```
+0x000  89 c9 ff 02        CRC recalculé + mode
+0x008  4c 00 49 00 ...    nom de profil "LINUX" (UTF-16LE)
+0x004  11 09 20 20        flag de profil 0x20200911
+0x02c  00 10 00 00        mapping[0] = 0x1000 (A -> B)
+0x094  00 64 00 64        deadzone sticks = 100
+0x0ae  55 aa              marqueur de bloc
+```
+
+Résultat mesuré après redémarrage : `BTN_SOUTH` pour A, stick à ±32768.
+
+Variantes toutes essayées sans effet : écriture de 532 et de 832 octets,
+`cmd 6 sub 0`, `sub 0x67`, `sub 0x15`, `sub 0x123`, session fermée par
+`cmd 7 sub 1`, marqueurs `55 aa` / `55 cc` / absents, nom de profil présent ou
+non, via BLE et via GIP, sur dock 2.4G et en filaire.
+
+**Conclusion** : sur ce firmware (2.00), les profils écrits par logiciel sont
+stockés fidèlement mais ne sont jamais appliqués au chemin XInput. Les seules
+liaisons non mesurables sont le Bluetooth/DirectInput (BlueZ refuse de créer la
+manette, `input-hog profile accept failed`) et le mode Tournament (`0x2051`,
+non atteignable sans le message de configuration du pilote Windows).
+
+La configuration réelle passe donc par le logiciel Windows, et la VM est bloquée
+sur le passthrough USB (la manette se réénumère à l'ouverture, QEMU perd le
+handle). Piste : passthrough du contrôleur PCI USB entier plutôt que du
+périphérique.
