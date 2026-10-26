@@ -320,3 +320,39 @@ La configuration réelle passe donc par le logiciel Windows, et la VM est bloqu�
 sur le passthrough USB (la manette se réénumère à l'ouverture, QEMU perd le
 handle). Piste : passthrough du contrôleur PCI USB entier plutôt que du
 périphérique.
+
+## 12. Débloquer la VM : passthrough du contrôleur USB
+
+Le passthrough du périphérique seul échoue (la manette se réénumère à l'ouverture
+et QEMU perd le handle). La solution propre est de donner à la VM **le
+contrôleur PCI entier**.
+
+Relevé sur cette machine :
+
+| Élément | Valeur |
+|---|---|
+| Contrôleur du bus 5 (manette) | `0000:c8:00.3` (`1022:15c0`) |
+| Groupe IOMMU | **29**, et il ne contient que ce contrôleur |
+| Ce qu'il porte | manette, hub VIA, hub Terminus, billboard, lecteur microSD |
+| Clavier / souris / Bluetooth | `0000:c6:00.3` → **non affectés** |
+
+`vfio-pci` n'est présent que pour les noyaux **7.3.0-3** et **6.18.55-lts**
+(`/lib/modules/7.2.9-2-cachyos` est absent). Un redémarrage sur 7.3.0-3 est donc
+nécessaire — et il débloque aussi `usbmon`, utile pour capturer le trafic.
+
+```bash
+sudo ./scripts/usb-passthrough.sh on     # contrôleur -> vfio
+docker run -d --name win \
+  --device=/dev/kvm --device=/dev/net/tun --cap-add NET_ADMIN \
+  --device=/dev/vfio/vfio --device=/dev/vfio/29 \
+  -p 8006:8006 \
+  -e VERSION=11 -e RAM_SIZE=6G -e CPU_CORES=4 -e DISK_SIZE=40G \
+  -e ARGUMENTS="-device vfio-pci,host=0000:c8:00.3" \
+  -v ~/vms/windows:/storage -v ~/vms/shared:/shared \
+  --stop-timeout 120 dockurr/windows
+
+sudo ./scripts/usb-passthrough.sh off    # rendu à l'hôte après usage
+```
+
+Dans Windows : `Z:\8bitdo-gyro.exe`, clic droit → Exécuter en tant
+qu'administrateur.
