@@ -1,0 +1,19 @@
+# 8BitDo Ultimate 3-mode Controller (2dc8:2030)
+#
+# En mode Xbox le pad expose l'interface XGIP (ff/47/d0) : aucun hidraw n'est créé.
+# On autorise l'utilisateur de la session à ouvrir directement le nœud usbfs, ce qui
+# permet à libusb (pyusb) de détacher `xpad` puis de parler GIP sur les endpoints
+# interrupt 0x01 / 0x81 sans être root.
+#
+# Installation : sudo ./scripts/setup-permissions.sh
+
+# Mode Xbox filaire
+SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", ATTR{idProduct}=="2030", TAG+="uaccess"
+
+# Adaptateur 2.4G (PID à confirmer) et variantes Ultimate
+SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", ATTR{idProduct}=="2031", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", ATTR{idProduct}=="3013", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", ATTR{idProduct}=="3106", TAG+="uaccess"
+
+# Accès hidraw pour les autres modes / modèles (lecture écriture utilisateur)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2dc8", TAG+="uaccess", MODE="0660"

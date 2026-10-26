@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ultim8do"
+version = "0.0.1"
+description = "Protocole 8BitDo Ultimate 3-mode sous Linux (GIP + configuration)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "evdev>=2.0.0",
+    "pyusb>=1.2.1",
+]
+
+[project.scripts]
+ultim8do = "ultim8do.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ultim8do"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
