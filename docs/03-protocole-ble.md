@@ -252,3 +252,37 @@ ce canal ne sert pas.
 
 Le record a été restauré dans son état d'usine (CRC `0xc323`, deadzone pleine
 course, remaps par défaut) à l'issue des essais.
+
+## 10. Oracle par l'application iOS — et verdict
+
+L'app iOS officielle *Ultimate Software* (la V2 refuse de s'appairer sur ce
+modèle) se connecte en **mode Bluetooth** (`81HB-D`) et configure la manette.
+Elle a servi d'oracle : un seul réglage changé (deadzone stick gauche = 50), puis
+comparaison des relevés avec `tools/record-diff.py`.
+
+### Ce que l'app écrit — notre disposition était la bonne
+
+| Octet modifié | Contenu |
+|---|---|
+| `0x000` | CRC d'en-tête (recalculé) |
+| `bloc+0x00` | flag de profil `0x20200911` |
+| `bloc+0x28` | flag de section mapping |
+| `bloc+0x2C..0x7B` | 20 codes de fonction, **4 octets chacun** |
+| `bloc+0x7C` | flag calibration, puis 4 flottants |
+| `bloc+0x90` / `+0x94` | deadzone : `00 42 00 80` → **LS 0→66** (l'app convertit 50 en 66) |
+| `bloc+0x98` / `+0x9C` | triggers `00 ff 00 ff` |
+| `bloc+0xA0` / `+0xA4` | options |
+| `bloc+0xAE` | marqueur `55 cc` (au lieu de `55 aa` à l'usine) |
+
+### Verdict
+
+Un profil **cloné octet pour octet** depuis celui produit par l'app (marqueur
+`55 cc` inclus), écrit dans le record PC puis commité, **ne s'applique toujours
+pas** : le stick sort à ±32768.
+
+Le canal BLE `2B11` est donc un canal de configuration réel (l'app s'en sert),
+mais le record qu'il expose en mode PC n'est pas celui que le firmware applique
+au chemin XInput/2.4G. Piste restante : la configuration XInput est probablement
+portée par le **dock**, poussée dans la manette à l'établissement du lien 2.4G —
+ce qui expliquerait qu'aucune écriture, même valide, ne survive à la
+reconnexion.
