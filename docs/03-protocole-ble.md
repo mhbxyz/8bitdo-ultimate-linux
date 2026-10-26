@@ -286,3 +286,36 @@ au chemin XInput/2.4G. Piste restante : la configuration XInput est probablement
 portée par le **dock**, poussée dans la manette à l'établissement du lien 2.4G —
 ce qui expliquerait qu'aucune écriture, même valide, ne survive à la
 reconnexion.
+
+## 11. Test décisif : l'application officielle elle-même
+
+L'app iOS connectée **en mode PC** (sélecteur sur « PC ») modifie deux réglages :
+deadzone stick gauche = 50 et A → B.
+
+Diff des records relevés avant/après (`tools/record-diff.py`) :
+
+```
+0x000..0x001  CRC d'en-tête                     0xc323 → 0x9f4b
+0x031         bloc 0 +0x2d  mapping A → B       0x20   → 0x10
+0x099         bloc 0 +0x95  deadzone LS fin     0x80   → 0x42  (66)
+```
+
+Deux écritures **partielles**, marqueurs de bloc inchangés (`55 aa`).
+
+Après extinction/rallumage :
+
+| Vérification | Résultat |
+|---|---|
+| record conservé | ✅ CRC `0x9f4b`, deadzone `0→66`, `a→b` |
+| A appuyé sur la manette | ❌ sort en `BTN_SOUTH` (A) |
+| stick gauche à fond | ❌ ±32768, deadzone non appliquée |
+
+**Conclusion** : même le logiciel officiel ne modifie pas le comportement
+XInput par ce canal. Le record exposé sur `2B11` décrit donc le profil de la
+liaison **Bluetooth**, pas celui du lien 2.4G/dock — ce qui explique d'un coup
+pourquoi aucune de nos écritures, même parfaitement conformes, n'a jamais eu
+d'effet sur la manette utilisée via le dock.
+
+Corollaire : le canal BLE fait bien ce qu'il annonce (lecture, écriture
+partielle, sauvegarde), et notre outillage est correct ; c'est simplement le
+mauvais profil qui est éditable depuis Linux.
