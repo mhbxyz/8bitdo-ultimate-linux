@@ -319,3 +319,29 @@ d'effet sur la manette utilisée via le dock.
 Corollaire : le canal BLE fait bien ce qu'il annonce (lecture, écriture
 partielle, sauvegarde), et notre outillage est correct ; c'est simplement le
 mauvais profil qui est éditable depuis Linux.
+
+## 12. Test en filaire : le dock est innocenté
+
+Le sélecteur sur **Xbox** et un câble USB-C font apparaître la manette en `2dc8:2030`
+(mode filaire). La manette reste joignable en BLE sous `81HB-X`, ce qui a permis de
+lui écrire une configuration puis de la mesurer sur son nœud `evdev` filaire.
+
+Configuration écrite dans **les trois profils** du record Xbox (deadzone
+`LS 0→66`, mapping `A→B`), commit `0x67`, en flash (CRC `0x3796`), puis
+débranchement/rebranchement.
+
+Résultat : `BTN_SOUTH` pour A, stick à ±32768. **Aucun effet.**
+
+| Liaison testée | Configuration stockée | Appliquée |
+|---|---|---|
+| dock 2.4G (mode PC) | ✅ | ❌ |
+| filaire USB (mode Xbox) | ✅ | ❌ |
+| écriture par l'app officielle (mode PC) | ✅ | ❌ |
+
+Le dock est donc hors de cause : le même silence s'observe en filaire. Trois
+liaisons, trois échecs, y compris quand c'est le logiciel officiel qui écrit.
+
+`setConfigState` (`cmd 0x11`) existe dans la bibliothèque mais n'est utilisé que
+pour les modèles `UT2`/`lashen`, pas pour celui-ci.
+
+État final : records remis à zéro, manette rendue à son comportement d'usine.
