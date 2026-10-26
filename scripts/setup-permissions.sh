@@ -4,10 +4,11 @@
 #   sudo ./scripts/setup-permissions.sh            # udev + usbmon
 #   sudo ./scripts/setup-permissions.sh --uninstall
 #
-# - udev : ouvre /dev/bus/usb/** des périphériques 8BitDo à l'utilisateur de la session
-#          (TAG+="uaccess", pas de groupe à maintenir, ACL posée par systemd-logind).
-# - usbmon : charge le module et rend /sys/kernel/debug/usb/usbmon lisible, ce qui permet
-#          de capturer le trafic USB avec dumpcap/tshark (ou `cat /sys/kernel/debug/usb/usbmon/5u`).
+# - udev : ouvre les périphériques USB 8BitDo (MODE 0660, groupe input) et les
+#          nœuds hidraw correspondants. Pas de dépendance à systemd-logind.
+# - usbmon : charge le module et rend /sys/kernel/debug/usb/usbmon lisible, pour
+#          capturer le trafic (dumpcap/tshark ou `cat .../5u`). Optionnel : la
+#          phase de mesure peut se faire sans.
 
 set -euo pipefail
 
@@ -28,23 +29,33 @@ fi
 
 install -m 0644 "$SRC" "$RULE"
 udevadm control --reload-rules
-udevadm trigger --subsystem-match=usb --subsystem-match=hidraw
+udevadm trigger --subsystem-match=usb --subsystem-match=hidraw --subsystem-match=input
 echo "règle udev installée : $RULE"
 
 # --- usbmon ---------------------------------------------------------------
-modprobe usbmon || echo "avertissement : modprobe usbmon a échoué" >&2
+KREL=$(uname -r)
+if [[ ! -d /lib/modules/$KREL ]]; then
+    echo
+    echo "AVERTISSEMENT : le noyau en cours ($KREL) n'a pas d'arborescence de modules"
+    echo "  (/lib/modules/$KREL absent). usbmon ne peut pas être chargé."
+    echo "  Modules disponibles : $(ls -d /lib/modules/*/ 2>/dev/null | xargs -n1 basename | tr '\n' ' ')"
+    echo "  → redémarrer sur un noyau installé (ex. 7.3.0-3-cachyos) pour les captures USB."
+else
+    modprobe usbmon || echo "avertissement : modprobe usbmon a échoué" >&2
+fi
+
 if ! mountpoint -q /sys/kernel/debug; then
     mount -t debugfs none /sys/kernel/debug 2>/dev/null || true
 fi
 if [[ -d /sys/kernel/debug/usb/usbmon ]]; then
     chmod 0755 /sys/kernel/debug/usb/usbmon 2>/dev/null || true
     chmod 0644 /sys/kernel/debug/usb/usbmon/* 2>/dev/null || true
-    echo "usbmon disponible : /sys/kernel/debug/usb/usbmon (bus 5 → fichier 5u)"
-    ls /sys/kernel/debug/usb/usbmon
+    echo "usbmon disponible : /sys/kernel/debug/usb/usbmon -> $(ls /sys/kernel/debug/usb/usbmon | tr '\n' ' ')"
 else
-    echo "avertissement : usbmon indisponible (debugfs non monté ?)" >&2
+    echo "usbmon indisponible (module non chargé ou debugfs non monté) — non bloquant."
 fi
 
 echo
-echo "Connectez le pad puis vérifiez avec :"
-echo "  ./tools/dump-device.sh"
+echo "Vérification :"
+echo "  ls -l /dev/bus/usb/*/*   # doit être crw-rw---- root input pour 2dc8"
+echo "  uv run tools/mode-switch.py --dry-run"

@@ -1,19 +1,23 @@
-# 8BitDo Ultimate 3-mode Controller (2dc8:2030)
+# 8BitDo — accès utilisateur aux périphériques USB et aux nœuds hidraw
 #
-# En mode Xbox le pad expose l'interface XGIP (ff/47/d0) : aucun hidraw n'est créé.
-# On autorise l'utilisateur de la session à ouvrir directement le nœud usbfs, ce qui
-# permet à libusb (pyusb) de détacher `xpad` puis de parler GIP sur les endpoints
-# interrupt 0x01 / 0x81 sans être root.
+# En mode Xbox la manette 8BitDo Ultimate 3-mode (2dc8:2030) expose l'interface
+# XGIP (ff/47/d0) : aucun hidraw n'est créé. Pour parler au pad (détacher xpad,
+# envoyer le « knock » de bascule en mode configuration), l'utilisateur doit
+# pouvoir ouvrir le nœud usbfs /dev/bus/usb/BBB/DDD.
+#
+# On n'utilise pas TAG+="uaccess" seul : l'ACL dépend de systemd-logind et d'une
+# session de siège active, ce qui n'est pas toujours le cas ici. Le groupe
+# `input` est plus déterministe (l'utilisateur y est déjà).
 #
 # Installation : sudo ./scripts/setup-permissions.sh
 
-# Mode Xbox filaire
-SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", ATTR{idProduct}=="2030", TAG+="uaccess"
+# Tous les périphériques USB 8BitDo (tous PID : le pad change de PID en mode config)
+SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", MODE="0660", GROUP="input"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", TAG+="uaccess"
 
-# Adaptateur 2.4G (PID à confirmer) et variantes Ultimate
-SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", ATTR{idProduct}=="2031", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", ATTR{idProduct}=="3013", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTR{idVendor}=="2dc8", ATTR{idProduct}=="3106", TAG+="uaccess"
+# Nœuds hidraw des modes HID (config / DInput / dongle 2.4G)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2dc8", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2dc8", TAG+="uaccess"
 
-# Accès hidraw pour les autres modes / modèles (lecture écriture utilisateur)
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2dc8", TAG+="uaccess", MODE="0660"
+# Entrées (joystick/event) : permet de garder les rapports XInput drainés
+SUBSYSTEM=="input", ATTRS{idVendor}=="2dc8", MODE="0660", GROUP="input"
