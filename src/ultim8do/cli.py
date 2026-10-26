@@ -1,10 +1,11 @@
 """CLI de configuration de la 8BitDo Ultimate 3-mode sous Linux (BLE).
 
-    uv run ultim8do dump                          # lit et affiche le record courant
-    uv run ultim8do set --slot 0 --name SALON
-    uv run ultim8do set --slot 0 --stick-deadzone 12 --trigger-deadzone 8
+    uv run ultim8do dump                                  # lit et affiche le record
+    uv run ultim8do set --slot 0 --stick-deadzone 12
+    uv run ultim8do set --slot 0 --trigger-deadzone 8
     uv run ultim8do set --slot 0 --map a=b --map b=a
-    uv run ultim8do profile 1                     # active le profil 1
+    uv run ultim8do set --slot 0 --option swap-sticks
+    uv run ultim8do set --slot 1 --enable                 # active le profil 1
 
 `set` écrit, commite et relit pour vérifier.
 """
@@ -22,19 +23,25 @@ from bleak import BleakClient
 
 from . import ble
 from .record import (
-    BASE,
     BUTTON_ORDER,
     FLAG_ENABLED,
+    FLAG_ERASED,
     KEY_CODES,
-    OFF_CUR_SLOT,
-    OFF_MAPPING,
-    OFF_NAMES,
-    OFF_SLOT_FLAGS,
+    OFF_MAP,
+    OFF_MAP_FLAG,
+    OFF_OPTIONS,
+    OFF_OPTIONS_FLAG,
     OFF_STICKS,
+    OFF_STICKS_FLAG,
     OFF_TRIGGERS,
+    OFF_TRIGGERS_FLAG,
+    OPTION_BITS,
     Record,
+    block_offset,
     finalise,
 )
+
+OPTION_NAMES = {name.replace(" ", "-"): bit for bit, name in OPTION_BITS.items()}
 
 
 async def wait_for_device(timeout: float):
@@ -54,23 +61,23 @@ async def connected(timeout: float) -> BleakClient:
 
 
 def print_record(record: Record) -> None:
-    print(f"record id {record.record_id} · mode {record.mode} · profil actif {record.cur_slot}")
+    print(f"record id {record.record_id}")
     print(
         f"CRC en-tête 0x{record.header_crc:04x} (recalculé 0x{record.stored_crc:04x}"
-        f"{' — cohérent' if record.crc_ok else " — recalculé par la manette"})"
+        f"{' — cohérent' if record.crc_ok else ' — différent'})"
     )
-    for slot in record.slots:
-        state = "actif" if slot.enabled else f"inactif (0x{slot.flag:08x})"
-        print(f"\n-- profil {slot.index} : {state}")
-        if not slot.enabled:
+    for profile in record.profiles:
+        state = "actif" if profile.enabled else f"inactif (0x{profile.flag:08x})"
+        print(f"\n-- profil {profile.index} : {state}")
+        if not profile.enabled:
             continue
-        print(f"   nom       : {slot.name!r}")
-        print(f"   deadzone  : {record.describe_sticks(slot.index)}")
-        print(f"   triggers  : {record.describe_triggers(slot.index)}")
-        special = record.describe_special(slot.index)
-        print(f"   options   : {', '.join(special) if special else '—'}")
-        mapping = record.describe_mapping(slot.index)
-        print(f"   remaps    : {', '.join(mapping) if mapping else '—'}")
+        cal = ", ".join(f"{value:.0f}" for value in profile.calibration)
+        print(f"   calibration : {cal}")
+        print(f"   deadzone    : {record.describe_sticks(profile.index)}")
+        print(f"   triggers    : {record.describe_triggers(profile.index)}")
+        options = record.describe_options(profile.index)
+        print(f"   options     : {', '.join(options) if options else '—'}")
+        print(f"   remaps      : {', '.join(record.describe_mapping(profile.index))}")
 
 
 async def cmd_dump(args) -> int:
@@ -83,20 +90,18 @@ async def cmd_dump(args) -> int:
                 json.dumps(
                     {
                         "record_id": record.record_id,
-                        "mode": record.mode,
-                        "cur_slot": record.cur_slot,
                         "crc_ok": record.crc_ok,
-                        "slots": [
+                        "profiles": [
                             {
-                                "index": s.index,
-                                "flag": f"0x{s.flag:08x}",
-                                "name": s.name,
-                                "sticks": s.sticks,
-                                "triggers": s.triggers,
-                                "special": s.special,
-                                "mapping": s.mapping,
+                                "index": p.index,
+                                "flag": f"0x{p.flag:08x}",
+                                "mapping": p.mapping,
+                                "calibration": p.calibration,
+                                "sticks": p.sticks,
+                                "triggers": p.triggers,
+                                "options": p.options,
                             }
-                            for s in record.slots
+                            for p in record.profiles
                         ],
                     },
                     indent=2,
@@ -113,42 +118,48 @@ async def cmd_dump(args) -> int:
 
 def apply_edits(raw: bytes, args) -> bytes:
     record = bytearray(raw)
-    slot = args.slot
-    flags_off = BASE + OFF_SLOT_FLAGS + 4 * slot
-    (flag,) = struct.unpack_from("<I", record, flags_off)
-    if flag != FLAG_ENABLED:
-        struct.pack_into("<I", record, flags_off, FLAG_ENABLED)
+    base = block_offset(args.slot)
+    struct.pack_into("<I", record, base, FLAG_ENABLED)
 
-    if args.name is not None:
-        name = args.name.encode("utf-16-le")[:32].ljust(32, b"\x00")
-        start = BASE + OFF_NAMES + 32 * slot
-        record[start : start + 32] = name
+    if args.disable:
+        struct.pack_into("<I", record, base, FLAG_ERASED)
+        return finalise(record)
 
     if args.stick_deadzone is not None:
-        dz = max(0, min(128, args.stick_deadzone))
-        struct.pack_into("<IBBBB", record, BASE + OFF_STICKS + 8 * slot, FLAG_ENABLED, 0, dz, 0, dz)
+        value = max(0, min(128, args.stick_deadzone))
+        struct.pack_into("<I", record, base + OFF_STICKS_FLAG, FLAG_ENABLED)
+        struct.pack_into("<BBBB", record, base + OFF_STICKS, 0, value, 0, value)
 
     if args.trigger_deadzone is not None:
-        dz = max(0, min(255, args.trigger_deadzone))
-        struct.pack_into(
-            "<IBBBB", record, BASE + OFF_TRIGGERS + 8 * slot, FLAG_ENABLED, 0, dz, 0, dz
-        )
+        value = max(0, min(255, args.trigger_deadzone))
+        struct.pack_into("<I", record, base + OFF_TRIGGERS_FLAG, FLAG_ENABLED)
+        struct.pack_into("<BBBB", record, base + OFF_TRIGGERS, 0, value, 0, value)
 
     if args.map:
-        base_map = BASE + OFF_MAPPING + 92 * slot
+        struct.pack_into("<I", record, base + OFF_MAP_FLAG, FLAG_ENABLED)
         for spec in args.map:
             button, _, target = spec.partition("=")
             if button not in BUTTON_ORDER:
-                raise SystemExit(f"bouton inconnu : {button} (valeurs : {', '.join(BUTTON_ORDER)})")
+                raise SystemExit(
+                    f"bouton inconnu : {button} (valeurs : {', '.join(BUTTON_ORDER)})"
+                )
             if target not in KEY_CODES:
                 raise SystemExit(
                     f"fonction inconnue : {target} (valeurs : {', '.join(sorted(KEY_CODES))})"
                 )
-            struct.pack_into("<I", record, base_map + 4 + 4 * BUTTON_ORDER.index(button), KEY_CODES[target])
-        struct.pack_into("<I", record, base_map, FLAG_ENABLED)
+            offset = base + OFF_MAP + 4 * BUTTON_ORDER.index(button)
+            struct.pack_into("<I", record, offset, KEY_CODES[target])
 
-    if args.cur_slot is not None:
-        struct.pack_into("<H", record, BASE + OFF_CUR_SLOT, args.cur_slot)
+    if args.option:
+        struct.pack_into("<I", record, base + OFF_OPTIONS_FLAG, FLAG_ENABLED)
+        (current,) = struct.unpack_from("<I", record, base + OFF_OPTIONS)
+        for name in args.option:
+            if name not in OPTION_NAMES:
+                raise SystemExit(
+                    f"option inconnue : {name} (valeurs : {', '.join(OPTION_NAMES)})"
+                )
+            current |= OPTION_NAMES[name]
+        struct.pack_into("<I", record, base + OFF_OPTIONS, current)
 
     return finalise(record)
 
@@ -161,26 +172,12 @@ async def cmd_set(args) -> int:
         await ble.write_record(client, updated)
         await ble.commit(client)
         print("écrit + commité — relecture de contrôle :\n")
-        raw_after = await ble.read_record(client)
-        after = Record.parse(raw_after)
+        after = Record.parse(await ble.read_record(client))
         print_record(after)
         if args.save:
             with open(args.save, "wb") as fh:
-                fh.write(raw_after)
+                fh.write(await ble.read_record(client))
             print(f"enregistré : {args.save}")
-    return 0
-
-
-async def cmd_profile(args) -> int:
-    client = await connected(args.wait)
-    async with client:
-        raw = await ble.read_record(client)
-        record = bytearray(raw)
-        struct.pack_into("<H", record, BASE + OFF_CUR_SLOT, args.index)
-        await ble.write_record(client, finalise(record))
-        await ble.commit(client)
-        print(f"profil actif réglé sur {args.index}")
-        print_record(Record.parse(await ble.read_record(client)))
     return 0
 
 
@@ -199,18 +196,17 @@ def main(argv: list[str] | None = None) -> int:
     sett = sub.add_parser("set", help="modifie un profil puis commit")
     sett.add_argument("--wait", type=float, default=120.0)
     sett.add_argument("--slot", type=int, default=0, choices=range(3))
-    sett.add_argument("--name")
-    sett.add_argument("--stick-deadzone", type=int)
-    sett.add_argument("--trigger-deadzone", type=int)
+    sett.add_argument("--stick-deadzone", type=int, help="0..128")
+    sett.add_argument("--trigger-deadzone", type=int, help="0..255")
     sett.add_argument("--map", action="append", help="ex. a=b")
-    sett.add_argument("--cur-slot", type=int, choices=range(3))
+    sett.add_argument(
+        "--option",
+        action="append",
+        help=",".join(OPTION_NAMES),
+    )
+    sett.add_argument("--disable", action="store_true", help="désactive le profil")
     sett.add_argument("--save")
     sett.set_defaults(func=cmd_set)
-
-    prof = sub.add_parser("profile", help="active un profil")
-    prof.add_argument("index", type=int, choices=range(3))
-    prof.add_argument("--wait", type=float, default=120.0)
-    prof.set_defaults(func=cmd_profile)
 
     args = parser.parse_args(argv)
     return asyncio.run(args.func(args))
