@@ -200,3 +200,31 @@ Ce qui reste : le mapping écrit à `bloc+0x2C` est bien persisté mais **n'agit
 sur les rapports XInput. Le chemin natif du modèle « Three » reste à identifier
 (celui de `Ultimate3Xbox` écrit des entrées de 8 octets à `+0x2C`, alors que le
 record de 532 octets observé les espace de 4 octets).
+
+## 8. `cur_slot` et limite d'application en mode PC
+
+`S_Ultimate3XboxAdvance_setCurslot` écrit dans **`record[3]`** : l'octet que
+j'avais pris pour un « identifiant de record » est en réalité le **profil actif**.
+Valeurs observées : `1` en mode PC/W, `2` en mode Xbox, `3` en mode D.
+
+La manette **refuse** qu'on le modifie : écrit `0`, relu `1` après commit. Elle
+garde la main sur ce champ.
+
+Test d'application, avec `deadzone sticks = 100/128` écrit successivement :
+
+| Bloc écrit | Amplitude mesurée du stick gauche |
+|---|---|
+| bloc 0 | ±32768 (pleine course) |
+| bloc 1 (= `cur_slot`) | ±32768 (pleine course) |
+
+Conclusion : le record accessible sur la caractéristique `2B11` (532 octets,
+blocs de 176) **n'est pas celui que le firmware applique au chemin XInput/2.4G**.
+Les écritures y sont persistées (commit `0x67`) mais restent sans effet sur les
+rapports de manette.
+
+Cohérent avec le §6 : le logiciel officiel manipule un record de **832 octets**
+(blocs de 276), que la manette ne sert pas sur ce canal dans les modes testés.
+
+Prochaine piste : trouver comment l'app atteint ce record de 832 octets — soit un
+canal/mode de configuration distinct (déclenché par une commande, comme le
+« knock » des autres modèles), soit une négociation préalable sur `2B11`.
