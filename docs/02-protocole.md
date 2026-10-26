@@ -185,3 +185,58 @@ C'est la voie la plus simple si la 3-mode se comporte pareil — à mesurer.
 - Descripteurs et PID en mode D.
 - Taille et offsets du record (1652 o attendus ?), champs deadzone / mapping / profils.
 - Message GIP utilisé par *Ultimate Software X* (seulement si les voies D et BLE échouent).
+
+## 7. Le vrai canal de configuration : GIP `0x13` (832 octets)
+
+Découverte décisive via le projet communautaire
+[`AriesAlex/8bitdo-gyro`](https://github.com/AriesAlex/8bitdo-gyro) (Rust/Tauri,
+cible exactement cette manette) : la configuration ne passe **pas** par le BLE en
+mode Xbox/PC, mais par **GIP**, avec un rapport de 64 octets en charge utile.
+
+### Format
+
+```
+charge utile GIP (60 octets) :
+  04 | u16 cmd | u16 sub | u16 len | u16 crc | u32 total | u32 offset | data
+
+trame GIP : [0x13][options][seq][len=60] + charge utile
+réponse   : [0x12][options][seq][len]    + 04 00 | u16 cmd | u16 len | u16 crc
+                                            | u32 total | u32 offset | data
+```
+
+- `total` = **832** (`0x340`) en GIP ; l'app en mode HID envoie `total = len`.
+- Lecture : `cmd 2`. Écriture : `cmd 1` (stage) puis **`cmd 6 sub 0`** (applique
+  au processeur d'entrée — c'est la commande qui manquait).
+- Session : `cmd 7 sub 0` à l'ouverture, `cmd 7 sub 1` à la fermeture.
+
+Vérifié sur matériel : `cmd 7 sub 0` → `12 00 … 04 00 07 00 …` ;
+`cmd 2` renvoie `04 00 02 00 20 00 00 00 40 03 00 00 00 00 00 00 <data>`.
+
+### Record : 832 octets, 3 profils de 276
+
+L'outil communautaire donne `CONFIG_SIZE = 0x340` et `motion_offset(i) =
+0x10C + i·0x114` (blocs de 276, cohérent avec `get3Xbox_Write*` de la
+bibliothèque Android). Disposition relevée dans l'app Android (`S_Ultimate3XboxAdvance`) :
+
+| Section | Offset (relatif au profil) |
+|---|---|
+| nom | `+0x08` |
+| mapping | `+0x2C` (pas de 8 dans la bibliothèque Android) |
+| deadzone sticks | `+0xDC` |
+| triggers | `+0xF3` |
+| vibration | `+0xFB` |
+| special | `+0x104` |
+| gyroscope / motion | `+0x108` (`0x10C` avec base 4) |
+
+### État des essais
+
+| Opération | Résultat |
+|---|---|
+| lecture du record en GIP | ✅ (832 octets, en-tête `crc16 + 0xFF + mode` lu) |
+| `cmd 1` puis `cmd 6 sub 0` | ✅ acquittés (`12 00 … 04 00 01 00 …` puis `04 00 06 00`) |
+| persistance d'une écriture test | ❌ la valeur relue reste `0xFF` |
+
+L'écriture est acceptée mais non conservée : il manque vraisemblablement le
+message de « mode configuration » que le pilote Windows (`XboxGIP_Admin`) envoie
+avant d'ouvrir la session (`00 0F 00 00 00 00 FF 00 EB`), message qui n'a pas
+d'équivalent évident sur le fil.
