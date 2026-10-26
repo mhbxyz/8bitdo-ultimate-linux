@@ -99,3 +99,31 @@ A B X Y LB RB LT RT L3 R3 Select Start Star Home Up Down Left Right P1 P2 P3 P4
 - `CRC` recalculé par la manette **identique** au nôtre (`0x5258`, puis `0x986d`
   après ajout des deadzones) → disposition et algorithme confirmés ;
 - octet `record[3]` (id de record) réécrit par la manette si on tente de le modifier.
+
+## 5. Limite connue : le commit du record PC ne persiste pas
+
+Mesures sur le record **PC/Windows** (`81HB-W`, `record id 1`) :
+
+| Action | Résultat |
+|---|---|
+| lecture | ✅ 532 octets cohérents, CRC recalculé identique |
+| écriture (tranches de 45 o) | ✅ acquittée, relue dans la session |
+| relecture après reconnexion BLE | ✅ la modification est toujours là |
+| relecture après **extinction/rallumage** | ❌ retour à l'état d'origine (`0xc323`) |
+
+Essais infructueux pour faire persister : `commit sub 0x15`, `commit sub 0x123`,
+les deux à la suite, `report_state 0/1` autour de l'écriture, attente de 3 s avant
+déconnexion, avec et sans le dock branché (liaison 2.4G active ou non).
+
+À l'inverse, sur le record **D/Bluetooth** (`record id 3`), un `commit sub 0x15`
+avait bien survécu à un cycle d'alimentation — la voie d'écriture flash existe donc.
+
+Hypothèses restantes :
+
+1. le profil PC est stocké (ou validé) côté **dock/récepteur 2.4G**, pas dans la
+   manette — le logiciel officiel passerait par le canal de configuration du dock ;
+2. le commit exige un sous-code propre à ce mode, non déterminé ;
+3. un champ d'en-tête du bloc (les 28 octets à `bloc+0x0C`) doit être rempli pour
+   que le profil soit jugé valide et écrit.
+
+Trancher demande une capture du logiciel officiel sur Windows (VM + USBPcap).

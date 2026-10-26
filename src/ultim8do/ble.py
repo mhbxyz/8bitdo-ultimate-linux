@@ -231,13 +231,49 @@ async def write_record(client: "BleakClient", record: bytes, total: int | None =
     return written
 
 
-async def commit(client: "BleakClient", total: int = 532, sub: int = CMD_COMMIT_SUB) -> None:
-    """Envoie la commande de sauvegarde en flash (réponse sous ~3 s)."""
+COMMIT_SUBS = (0x15, 0x123)  # 0x15 : Bluetooth/2.4G ; 0x123 : mode PC (Windows)
+
+
+async def commit(
+    client: "BleakClient", total: int = 532, sub: int | None = None
+) -> list[int]:
+    """Envoie la ou les commandes de sauvegarde en flash.
+
+    Le sous-code varie selon le mode : `0x15` pour le record Bluetooth/2.4G,
+    `0x123` pour le record PC. On envoie les deux par défaut (le premier no-op
+    est sans effet) ; `sub` force un code unique.
+    """
+    queue: asyncio.Queue[bytes] = asyncio.Queue()
+    await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
+    reader = FrameReader(queue)
+    subs = (sub,) if sub is not None else COMMIT_SUBS
+    sent: list[int] = []
+    for code in subs:
+        await client.write_gatt_char(
+            CHAR_UUID,
+            bytes([TRANSFER]) + struct.pack("<HHHHII", CMD_COMMIT, code, 0, 0, total, 0),
+            response=True,
+        )
+        frame = await reader.next_frame(5.0)
+        if frame is not None:
+            sent.append(code)
+    return sent
+
+
+async def report_state(client: "BleakClient", enable: bool, total: int = 532) -> bytes | None:
+    """Coupe (0) ou relance (1) le flux de rapports d'entrée.
+
+    Le logiciel officiel encadre ses écritures avec cette commande ; sur certains
+    firmwares, les écritures sont ignorées tant que les rapports sont actifs.
+    """
     queue: asyncio.Queue[bytes] = asyncio.Queue()
     await client.start_notify(CHAR_UUID, lambda _c, data: queue.put_nowait(bytes(data)))
     reader = FrameReader(queue)
     await client.write_gatt_char(
-        CHAR_UUID, bytes([TRANSFER]) + struct.pack("<HHHHII", CMD_COMMIT, sub, 0, 0, total, 0),
+        CHAR_UUID,
+        bytes([TRANSFER])
+        + struct.pack("<HHHHII", CMD_REPORT_STATE, 0 if not enable else 1, 0, 0, total, 0),
         response=True,
     )
-    await reader.next_frame(5.0)
+    frame = await reader.next_frame(2.0)
+    return None if frame is None else frame.raw

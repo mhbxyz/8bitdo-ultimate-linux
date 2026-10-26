@@ -63,7 +63,11 @@ lb rb b a lt rt menu home p1 p2 p3 p4`.
 | 5. Réimplémentation Python | ✅ `src/ultim8do/` (transport BLE, record, CLI) |
 | 6. Interface Linux native | ⏳ |
 
-Limite connue : la configuration est **par mode**. Le record lu en mode Bluetooth
+Limite connue : le `commit` **persiste en mode Bluetooth/D** (vérifié après cycle
+d'alimentation) mais **pas encore en mode PC/W** — voir
+[`docs/03-protocole-ble.md`](docs/03-protocole-ble.md#5-limite-connue--le-commit-du-record-pc-ne-persiste-pas).
+
+La configuration est aussi **par mode**. Le record lu en mode Bluetooth
 (`record id 3`, `gamepad_mode 1`) est distinct de celui du mode PC/2.4G
 (`gamepad_mode 3`) : pour configurer ce dernier, basculer le sélecteur sur « PC »
 et relancer les mêmes commandes.

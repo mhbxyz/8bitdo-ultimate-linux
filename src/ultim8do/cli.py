@@ -165,15 +165,28 @@ def apply_edits(raw: bytes, args) -> bytes:
 
 
 async def cmd_set(args) -> int:
-    client = await connected(args.wait)
-    async with client:
+    device = await wait_for_device(args.wait)
+    if device is None:
+        raise SystemExit("manette introuvable")
+    async with BleakClient(device) as client:
         raw = await ble.read_record(client)
         updated = apply_edits(raw, args)
+        await ble.report_state(client, False)
         await ble.write_record(client, updated)
-        await ble.commit(client)
-        print("écrit + commité — relecture de contrôle :\n")
-        after = Record.parse(await ble.read_record(client))
-        print_record(after)
+        subs = await ble.commit(client)
+        # la manette écrit la flash après avoir acquitté : on lui laisse le temps
+        await asyncio.sleep(3.0)
+        await ble.report_state(client, True)
+        print(f"commits envoyés : {[hex(s) for s in subs]}")
+        print("relecture immédiate :")
+        print_record(Record.parse(await ble.read_record(client)))
+
+    # Une reconnexion relit l'état réellement stocké (pas le cache de session).
+    await asyncio.sleep(2.0)
+    async with BleakClient(device) as client:
+        stored = Record.parse(await ble.read_record(client))
+        print("\nrelecture après reconnexion (état flash) :")
+        print_record(stored)
         if args.save:
             with open(args.save, "wb") as fh:
                 fh.write(await ble.read_record(client))
