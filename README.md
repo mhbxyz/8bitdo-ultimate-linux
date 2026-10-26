@@ -60,7 +60,7 @@ lb rb b a lt rt menu home p1 p2 p3 p4`.
 | 2. Capture du trafic | ✅ via BLE (le canal USB n'existe pas sur ce modèle) |
 | 3. Comparaison des réglages | ✅ lecture/écriture/commit vérifiés sur matériel |
 | 4. REA des binaires 8BitDo | ✅ [`docs/02-protocole.md`](docs/02-protocole.md), [`docs/re/`](docs/re/) |
-| 5. Réimplémentation Python | ✅ `src/ultim8do/` (transport BLE, record, CLI) |
+| 5. Réimplémentation Python | ✅ `src/ultim8do/` (transport BLE, record, CLI) — lecture/écriture/commit fonctionnels, mais le firmware n'applique pas ce record au mode XInput (voir §9 de la doc) |
 | 6. Interface Linux native | ⏳ |
 
 Limite connue : le `commit` **persiste en mode Bluetooth/D** (vérifié après cycle

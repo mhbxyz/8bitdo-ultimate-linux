@@ -228,3 +228,27 @@ Cohérent avec le §6 : le logiciel officiel manipule un record de **832 octets*
 Prochaine piste : trouver comment l'app atteint ce record de 832 octets — soit un
 canal/mode de configuration distinct (déclenché par une commande, comme le
 « knock » des autres modèles), soit une négociation préalable sur `2B11`.
+
+## 9. Conclusion sur l'application des réglages
+
+Test final, avec la séquence complète du logiciel officiel reproduite
+(lecture de l'en-tête de 116 octets, écriture du record entier, `commit 0x67`,
+cycle d'alimentation) et `deadzone sticks = 100/128` :
+
+| Essai | Amplitude du stick gauche |
+|---|---|
+| bloc 0, commit `0x15` | ±32768 |
+| bloc 1 (= `cur_slot`), commit `0x67` | ±32768 |
+| après lecture d'en-tête + commit `0x67` | ±32768 |
+
+Le firmware **n'applique pas** ce record au chemin XInput/2.4G : les écritures
+sont persistées en flash (vérifié après cycle d'alimentation) mais restent sans
+effet sur les rapports de manette.
+
+Bilan : le canal BLE `2B11` est un canal de configuration fonctionnel (lecture,
+écriture, sauvegarde), mais il ne porte pas la configuration que la manette
+utilise en mode XInput. Le logiciel officiel manipule un record de 832 octets que
+ce canal ne sert pas.
+
+Le record a été restauré dans son état d'usine (CRC `0xc323`, deadzone pleine
+course, remaps par défaut) à l'issue des essais.
